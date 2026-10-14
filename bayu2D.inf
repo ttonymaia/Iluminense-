@@ -1,0 +1,108 @@
+; This file is based on "Sample INF file for performing EZ-USB Firmware download using"
+; This file is the inf file for downloading Firmware when certain devices are connected to PC
+; This file support these devices:
+; 1. FBG Scan USB 2.0 IR Module SU256 : eeprom VID=0xBA8C PID=0x0256, BAYU2FW.spt will be downloaded, in BAYU2FW.spt : VID=0xBA8C PID=0X1688
+; 2. FBG Scan USB 2.0 IR Module SU512 : eeprom VID=0xBA8C PID=0x0512, BAYU2FW.spt will be downloaded, in BAYU2FW.spt : VID=0xBA8C PID=0X1688
+;
+; 3. FBG Scan USB 2.0 ACCD Module S10420-1006 : eeprom VID=0xBA8C PID=0x1006, USB20ACCD_FW.spt will be downloaded, in USB20ACCD_FW.spt : VID=0xBA8C PID=0X1688
+; 4. FBG Scan USB 2.0 ACCD Module S10420-1106 : eeprom VID=0xBA8C PID=0x1106, USB20ACCD_FW.spt will be downloaded, in USB20ACCD_FW.spt : VID=0xBA8C PID=0X1688
+;
+; 5. for More devices, copy the strings between ;********** ;**********, replace SU256 with what's new comer
+;
+;
+;------------------------------------------------------------------------------------------------------------------------------------------
+; BAYU2FW.spt support both SU256 & SU512
+;------------------------------------------------------------------------------------------------------------------------------------------
+; For both SU256 & SU512, they use the same FPGA firmware(.jed)/MCU firmware(.spt)/PC software(.exe)/same driver(.inf .sys)
+; All the software/firmware/driver judge whether SU256 or SU512 by eeprom value on board
+;
+;
+;------------------------------------------------------------------------------------------------------------------------------------------
+; USB20ACCD_FW.spt support both S10420-1006 & S10420-1106
+;------------------------------------------------------------------------------------------------------------------------------------------
+; For both S10420-1006 & S10420-1106, they use the same FPGA firmware(.jed)/MCU firmware(.spt)/PC software(.exe)/same driver(.inf .sys)
+; All the software/firmware/driver judge whether S10420-1006 or S10420-1106 by eeprom value on board
+;
+
+
+
+
+[Version]
+Signature="$CHICAGO$"
+Class=USB
+ClassGUID={36FC9E60-C465-11CF-8056-444553540000}
+provider=%PROVIDER%
+
+
+[SourceDisksNames]
+1=%bayu2d_INSTALL%,,,
+
+[SourceDisksFiles]
+bayu2dME.sys = 1
+bayu2d.sys = 1
+bayu2d.spd = 1
+
+[Manufacturer]
+%MFGNAME%=FBG Scan
+
+[FBG Scan]
+; product 0x1688 support both su256 & su512
+%VID_BA8C&PID_1688.DeviceDesc%=bayu2d, USB\VID_BA8C&PID_1688
+
+
+[DestinationDirs]
+bayu2dME.Files.Ext = 10,System32\Drivers
+bayu2d.Files.Ext = 10,System32\Drivers
+
+[bayu2d]
+CopyFiles=bayu2dME.Files.Ext
+AddReg=bayu2dME.AddReg
+
+[bayu2d.HW]
+AddReg=bayu2d.AddReg.Guid
+
+[bayu2d.NT]
+CopyFiles=bayu2d.Files.Ext
+AddReg=bayu2d.AddReg
+
+[bayu2d.NT.HW]
+AddReg=bayu2d.AddReg.Guid
+
+[bayu2d.NT.Services]
+Addservice = bayu2d, 0x00000002, bayu2d.AddService
+
+[bayu2d.AddService]
+DisplayName    = %bayu2d.SvcDesc%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %10%\System32\Drivers\bayu2d.sys
+LoadOrderGroup = Base
+
+[bayu2dME.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2dME.sys
+
+[bayu2d.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2d.sys
+
+[bayu2dME.Files.Ext]
+bayu2dME.sys
+
+[bayu2d.Files.Ext]
+bayu2d.sys
+
+[bayu2d.AddReg.Guid]
+HKR,,DriverGUID,,%bayu2d.GUID%
+
+;---------------------------------------------------------------;
+
+[Strings]
+PROVIDER="FBG Scan"
+MFGNAME="FBG Scan"
+bayu2d_INSTALL="FBG Scan USB20BS platform Driver Installation Disk"
+VID_BA8C&PID_1688.DeviceDesc="FBG Scan USB20BS (USB20IR & USB20ACCD), product 1688"
+bayu2d.SvcDesc="FBG Scan USB20BS Driver"
+
+bayu2d.GUID="{AE18AA60-7F6A-11d4-97DD-00010229B959}"

@@ -1,0 +1,125 @@
+; Installation INF for the bayspec USB Driver for Windows 7 and VISTA
+; Processor support for x64 based platforms.
+;
+; (c) Copyright 2009 bayspec Corporation
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=USB
+ClassGUID={36FC9E60-C465-11CF-8056-444553540000}
+provider=%BSUSBVistaWin7x64_Provider%
+CatalogFile=BSUSBVistaWin7x64.cat
+DriverVer=08/08/2013,3.4.1.20
+
+[SourceDisksNames]
+1=%BSUSBVistaWin7x64_Install%,,,
+
+[SourceDisksFiles]
+BSUSBVistaWin7x64.sys = 1
+
+[DestinationDirs]
+BSUSBVistaWin7x64.Files.Ext = 10,System32\Drivers
+
+[ControlFlags]
+ExcludeFromSelect = *
+
+[Manufacturer]
+%BSUSBVistaWin7x64_Provider%=Device,NT,NTx86,NTamd64
+
+;for all platforms
+[Device]
+;%VID_BA8C&PID_1688.DeviceDesc%=BSUSBVistaWin7x64, USB\VID_BA8C&PID_1688
+
+
+;for windows 2000 non intel platforms
+[Device.NT]
+;%VID_BA8C&PID_1688.DeviceDesc%=BSUSBVistaWin7x64, USB\VID_BA8C&PID_1688
+
+
+;for x86 platforms
+[Device.NTx86]
+;%VID_BA8C&PID_1688.DeviceDesc%=BSUSBVistaWin7x64, USB\VID_BA8C&PID_1688
+
+
+;for x64 platforms
+[Device.NTamd64]
+%VID_BA8C&PID_1688.DeviceDesc%=BSUSBVistaWin7x64, USB\VID_BA8C&PID_1688
+
+
+[BSUSBVistaWin7x64]
+CopyFiles=BSUSBVistaWin7x64.Files.Ext
+AddReg=BSUSBVistaWin7x64.AddReg
+
+[BSUSBVistaWin7x64.HW]
+AddReg=BSUSBVistaWin7x64.AddReg.Guid
+
+[BSUSBVistaWin7x64.Services]
+Addservice = BSUSBVistaWin7x64,2,BSUSBVistaWin7x64.AddService
+
+[BSUSBVistaWin7x64.NT]
+CopyFiles=BSUSBVistaWin7x64.Files.Ext
+AddReg=BSUSBVistaWin7x64.AddReg
+
+[BSUSBVistaWin7x64.NT.HW]
+AddReg=BSUSBVistaWin7x64.AddReg.Guid
+
+[BSUSBVistaWin7x64.NT.Services]
+Addservice = BSUSBVistaWin7x64,2,BSUSBVistaWin7x64.AddService
+
+
+[BSUSBVistaWin7x64.NTx86]
+CopyFiles=BSUSBVistaWin7x64.Files.Ext
+AddReg=BSUSBVistaWin7x64.AddReg
+
+[BSUSBVistaWin7x64.NTx86.HW]
+AddReg=BSUSBVistaWin7x64.AddReg.Guid
+
+[BSUSBVistaWin7x64.NTx86.Services]
+Addservice = BSUSBVistaWin7x64,2,BSUSBVistaWin7x64.AddService
+
+[BSUSBVistaWin7x64.NTamd64]
+CopyFiles=BSUSBVistaWin7x64.Files.Ext
+AddReg=BSUSBVistaWin7x64.AddReg
+
+[BSUSBVistaWin7x64.NTamd64.HW]
+AddReg=BSUSBVistaWin7x64.AddReg.Guid
+
+[BSUSBVistaWin7x64.NTamd64.Services]
+Addservice = BSUSBVistaWin7x64,2,BSUSBVistaWin7x64.AddService
+
+
+[BSUSBVistaWin7x64.AddReg]
+; Deprecating - do not use in new apps to identify a BSUSBVistaWin7x64 driver
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,BSUSBVistaWin7x64.sys
+; You may optionally include a check for DriverBase in your application to check for a BSUSBVistaWin7x64 driver
+HKR,,DriverBase,,BSUSBVistaWin7x64.sys
+HKR,"Parameters","MaximumTransferSize",0x10001,4096
+HKR,"Parameters","DebugLevel",0x10001,2
+HKR,,FriendlyName,,%BSUSBVistaWin7x64_Description%
+
+[BSUSBVistaWin7x64.AddService]
+DisplayName    = %BSUSBVistaWin7x64_Description%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %10%\System32\Drivers\BSUSBVistaWin7x64.sys
+AddReg         = BSUSBVistaWin7x64.AddReg
+LoadOrderGroup = Base
+
+[BSUSBVistaWin7x64.Files.Ext]
+BSUSBVistaWin7x64.sys
+
+[BSUSBVistaWin7x64.AddReg.Guid]
+HKR,,DriverGUID,,%BSUSBVistaWin7x64.GUID%
+
+[Strings]
+BSUSBVistaWin7x64_Provider    = "Bayspec"
+BSUSBVistaWin7x64_Company     = "Bayspec Corporation"
+BSUSBVistaWin7x64_Description = "Bayspec USB20BS Driver"
+BSUSBVistaWin7x64_DisplayName = "Bayspec USB20BS Generic"
+BSUSBVistaWin7x64_Install     = "Bayspec USB20BS BSUSBVistaWin7x64 Driver Installation Disk"
+VID_BA8C&PID_1688.DeviceDesc="Bayspec USB20BS (USB20IR & USB20ACCD), product 1688"
+BSUSBVistaWin7x64.GUID="{AE18AA60-7F6A-11d4-97DD-00010229B959}"
+BSUSBVistaWin7x64_Unused      = "."

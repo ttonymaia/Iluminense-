@@ -1,0 +1,353 @@
+; This file is based on "Sample INF file for performing EZ-USB Firmware download using"
+; This file is the inf file for downloading Firmware when certain devices are connected to PC
+; This file support these devices:
+; 1. FBG Scan USB 2.0 IR Module SU256LSB : eeprom VID=0xBA8C PID=0x0256, BAYU2FW.spt will be downloaded, in BAYU2FW.spt : VID=0xBA8C PID=0X1688
+; 2. FBG Scan USB 2.0 IR Module SU512LDB : eeprom VID=0xBA8C PID=0x0512, BAYU2FW.spt will be downloaded, in BAYU2FW.spt : VID=0xBA8C PID=0X1688
+; 3. FBG Scan USB 2.0 IR Module SU256LDB : eeprom VID=0xBA8C PID=0x2128, BAYU2FW.spt will be downloaded, in BAYU2FW.spt : VID=0xBA8C PID=0X1688
+;
+; 4. FBG Scan USB 2.0 ACCD Module S10420-1006 : eeprom VID=0xBA8C PID=0x1006, USB20ACCD_FW.spt will be downloaded, in USB20ACCD_FW.spt : VID=0xBA8C PID=0X1688
+; 5. FBG Scan USB 2.0 ACCD Module S10420-1106 : eeprom VID=0xBA8C PID=0x1106, USB20ACCD_FW.spt will be downloaded, in USB20ACCD_FW.spt : VID=0xBA8C PID=0X1688
+;
+; 6. for More devices, copy the strings between ;********** ;**********, replace SU256 with what's new comer
+;
+;
+;------------------------------------------------------------------------------------------------------------------------------------------
+; BAYU2FW.spt support both SU256LSB & SU512LDB & SU256LDB(2*128)
+;------------------------------------------------------------------------------------------------------------------------------------------
+; For both SU256LSB & SU512LDB & SU256LDB, they use the same FPGA firmware(.jed)/MCU firmware(.spt)/PC software(.exe)/same driver(.inf .sys)
+; All the software/firmware/driver judge whether SU256 or SU512 by eeprom value on board
+;
+;
+;------------------------------------------------------------------------------------------------------------------------------------------
+; USB20ACCD_FW.spt support both S10420-1006 & S10420-1106
+;------------------------------------------------------------------------------------------------------------------------------------------
+; For both S10420-1006 & S10420-1106, they use the same FPGA firmware(.jed)/MCU firmware(.spt)/PC software(.exe)/same driver(.inf .sys)
+; All the software/firmware/driver judge whether S10420-1006 or S10420-1106 by eeprom value on board
+;
+
+
+[Version]
+Signature="$CHICAGO$"
+Class=USB
+ClassGUID={36FC9E60-C465-11CF-8056-444553540000}
+provider=%FBG Scan%
+
+
+[SourceDisksNames]
+1=%bayu2L_INSTALL%,,,
+
+[SourceDisksFiles]
+bayu2LME.sys = 1
+bayu2L.sys = 1
+%bayu2L_SU256.SCRIPTFILE% = 1                                             ; SU256LSB script file
+%bayu2L_SU512.SCRIPTFILE% = 1                                             ; SU512LDB script file
+%bayu2L_SU256LDB.SCRIPTFILE% = 1                                          ; SU256LDB script file
+%bayu2L_S1006.SCRIPTFILE% = 1                                             ; S10420-1006 script file
+%bayu2L_S1106.SCRIPTFILE% = 1                                             ; S10420-1106 script file
+
+
+
+
+[Manufacturer]
+%MfgName%=FBG Scan
+
+[FBG Scan]
+%DeviceDesc_SU256%=bayu2L_SU256, USB\VID_BA8C&PID_0256                    ; SU256LSB VID PID
+%DeviceDesc_SU512%=bayu2L_SU512, USB\VID_BA8C&PID_0512                    ; SU512LDB VID PID
+%DeviceDesc_SU256LDB%=bayu2L_SU256LDB, USB\VID_BA8C&PID_2128              ; SU256LDB VID PID
+
+%DeviceDesc_S1006%=bayu2L_S1006, USB\VID_BA8C&PID_1006                    ; S10420-1006 VID PID
+%DeviceDesc_S1106%=bayu2L_S1106, USB\VID_BA8C&PID_1106                    ; S10420-1106 VID PID
+
+
+
+[DestinationDirs]
+bayu2LME.Files = 10,System32\Drivers
+bayu2L.Files = 10,System32\Drivers
+bayu2LFW_SU256.Files = 10,System32\bayu2L                                 ; =%bayu2L_SU256.SCRIPTFILE% SU256 script file
+bayu2LFW_SU512.Files = 10,System32\bayu2L                                 ; =%bayu2L_SU512.SCRIPTFILE% SU512 script file
+bayu2LFW_SU256LDB.Files = 10,System32\bayu2L                              ; =%bayu2L_SU256LDB.SCRIPTFILE% SU256LDB script file
+
+bayu2LFW_S1006.Files = 10,System32\bayu2L                                 ; =%bayu2L_S1006.SCRIPTFILE% S1006 script file
+bayu2LFW_S1106.Files = 10,System32\bayu2L                                 ; =%bayu2L_S1106.SCRIPTFILE% S1106 script file
+
+;****************************SU256LSB******************************************
+
+[bayu2L_SU256]
+CopyFiles=bayu2LME.Files
+CopyFiles=bayu2LFW_SU256.Files
+AddReg=bayu2LME_SU256.AddReg
+
+[bayu2L_SU256.HW]
+AddReg=bayu2L_SU256.AddReg.Guid
+
+[bayu2L_SU256.NT]
+CopyFiles=bayu2L.Files
+CopyFiles=bayu2LFW_SU256.Files
+AddReg=bayu2L_SU256.AddReg
+
+[bayu2L_SU256.NT.HW]
+AddReg=bayu2L_SU256.AddReg.Guid
+
+[bayu2L_SU256.NT.Services]
+Addservice = bayu2L_SU256, 0x00000002, bayu2L_SU256.AddService
+
+[bayu2L_SU256.AddService]
+DisplayName    = %bayu2L_SU256.SvcDesc%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %10%\System32\Drivers\bayu2L.sys
+LoadOrderGroup = Base
+
+[bayu2LME_SU256.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2LME.sys
+
+[bayu2L_SU256.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2L.sys
+
+[bayu2LFW_SU256.Files]
+%bayu2L_SU256.SCRIPTFILE%
+
+[bayu2L_SU256.AddReg.Guid]
+HKR,,DriverGUID,,%bayu2L.GUID%
+HKR,,DriverEXECSCRIPT,,%bayu2L.SCRIPTDIR%%bayu2L_SU256.SCRIPTFILE%
+
+;******************************************************************************
+
+;****************************SU256LDB******************************************
+
+[bayu2L_SU256LDB]
+CopyFiles=bayu2LME.Files
+CopyFiles=bayu2LFW_SU256LDB.Files
+AddReg=bayu2LME_SU256LDB.AddReg
+
+[bayu2L_SU256LDB.HW]
+AddReg=bayu2L_SU256LDB.AddReg.Guid
+
+[bayu2L_SU256LDB.NT]
+CopyFiles=bayu2L.Files
+CopyFiles=bayu2LFW_SU256LDB.Files
+AddReg=bayu2L_SU256LDB.AddReg
+
+[bayu2L_SU256LDB.NT.HW]
+AddReg=bayu2L_SU256LDB.AddReg.Guid
+
+[bayu2L_SU256LDB.NT.Services]
+Addservice = bayu2L_SU256LDB, 0x00000002, bayu2L_SU256LDB.AddService
+
+[bayu2L_SU256LDB.AddService]
+DisplayName    = %bayu2L_SU256LDB.SvcDesc%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %10%\System32\Drivers\bayu2L.sys
+LoadOrderGroup = Base
+
+[bayu2LME_SU256LDB.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2LME.sys
+
+[bayu2L_SU256LDB.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2L.sys
+
+[bayu2LFW_SU256LDB.Files]
+%bayu2L_SU256LDB.SCRIPTFILE%
+
+[bayu2L_SU256LDB.AddReg.Guid]
+HKR,,DriverGUID,,%bayu2L.GUID%
+HKR,,DriverEXECSCRIPT,,%bayu2L.SCRIPTDIR%%bayu2L_SU256LDB.SCRIPTFILE%
+
+;******************************************************************************
+
+;****************************SU512LDB******************************************
+
+[bayu2L_SU512]
+CopyFiles=bayu2LME.Files
+CopyFiles=bayu2LFW_SU512.Files
+AddReg=bayu2LME_SU512.AddReg
+
+[bayu2L_SU512.HW]
+AddReg=bayu2L_SU512.AddReg.Guid
+
+[bayu2L_SU512.NT]
+CopyFiles=bayu2L.Files
+CopyFiles=bayu2LFW_SU512.Files
+AddReg=bayu2L_SU512.AddReg
+
+[bayu2L_SU512.NT.HW]
+AddReg=bayu2L_SU512.AddReg.Guid
+
+[bayu2L_SU512.NT.Services]
+Addservice = bayu2L_SU512, 0x00000002, bayu2L_SU512.AddService
+
+[bayu2L_SU512.AddService]
+DisplayName    = %bayu2L_SU512.SvcDesc%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %10%\System32\Drivers\bayu2L.sys
+LoadOrderGroup = Base
+
+[bayu2LME_SU512.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2LME.sys
+
+[bayu2L_SU512.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2L.sys
+
+
+[bayu2LFW_SU512.Files]
+%bayu2L_SU512.SCRIPTFILE%
+
+[bayu2L_SU512.AddReg.Guid]
+HKR,,DriverGUID,,%bayu2L.GUID%
+HKR,,DriverEXECSCRIPT,,%bayu2L.SCRIPTDIR%%bayu2L_SU512.SCRIPTFILE%
+
+;***************************************************************************
+
+
+
+;****************************S10420-1006******************************************
+
+[bayu2L_S1006]
+CopyFiles=bayu2LME.Files
+CopyFiles=bayu2LFW_S1006.Files
+AddReg=bayu2LME_S1006.AddReg
+
+[bayu2L_S1006.HW]
+AddReg=bayu2L_S1006.AddReg.Guid
+
+[bayu2L_S1006.NT]
+CopyFiles=bayu2L.Files
+CopyFiles=bayu2LFW_S1006.Files
+AddReg=bayu2L_S1006.AddReg
+
+[bayu2L_S1006.NT.HW]
+AddReg=bayu2L_S1006.AddReg.Guid
+
+[bayu2L_S1006.NT.Services]
+Addservice = bayu2L_S1006, 0x00000002, bayu2L_S1006.AddService
+
+[bayu2L_S1006.AddService]
+DisplayName    = %bayu2L_S1006.SvcDesc%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %10%\System32\Drivers\bayu2L.sys
+LoadOrderGroup = Base
+
+[bayu2LME_S1006.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2LME.sys
+
+[bayu2L_S1006.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2L.sys
+
+
+[bayu2LFW_S1006.Files]
+%bayu2L_S1006.SCRIPTFILE%
+
+[bayu2L_S1006.AddReg.Guid]
+HKR,,DriverGUID,,%bayu2L.GUID%
+HKR,,DriverEXECSCRIPT,,%bayu2L.SCRIPTDIR%%bayu2L_S1006.SCRIPTFILE%
+
+;***************************************************************************
+
+
+;****************************S10420-1106******************************************
+
+[bayu2L_S1106]
+CopyFiles=bayu2LME.Files
+CopyFiles=bayu2LFW_S1106.Files
+AddReg=bayu2LME_S1106.AddReg
+
+[bayu2L_S1106.HW]
+AddReg=bayu2L_S1106.AddReg.Guid
+
+[bayu2L_S1106.NT]
+CopyFiles=bayu2L.Files
+CopyFiles=bayu2LFW_S1106.Files
+AddReg=bayu2L_S1106.AddReg
+
+[bayu2L_S1106.NT.HW]
+AddReg=bayu2L_S1106.AddReg.Guid
+
+[bayu2L_S1106.NT.Services]
+Addservice = bayu2L_S1106, 0x00000002, bayu2L_S1106.AddService
+
+[bayu2L_S1106.AddService]
+DisplayName    = %bayu2L_S1106.SvcDesc%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %10%\System32\Drivers\bayu2L.sys
+LoadOrderGroup = Base
+
+[bayu2LME_S1106.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2LME.sys
+
+[bayu2L_S1106.AddReg]
+HKR,,DevLoader,,*ntkern
+HKR,,NTMPDriver,,bayu2L.sys
+
+
+[bayu2LFW_S1106.Files]
+%bayu2L_S1106.SCRIPTFILE%
+
+[bayu2L_S1106.AddReg.Guid]
+HKR,,DriverGUID,,%bayu2L.GUID%
+HKR,,DriverEXECSCRIPT,,%bayu2L.SCRIPTDIR%%bayu2L_S1106.SCRIPTFILE%
+
+;***************************************************************************
+
+;-----------------2 public files-----------------------------;
+
+[bayu2LME.Files]
+bayu2LME.sys
+
+[bayu2L.Files]
+bayu2L.sys
+
+;------------------------------------------------------------;
+[Strings]
+FBG Scan       = "FBG Scan"
+MfgName       = "FBG Scan"
+
+;------------Replace GUID below with custom GUID (generated with GuidGen)------------;
+bayu2L.GUID       = "{259E1A84-51FE-4c77-9A7F-894904D6D7C3}"
+
+bayu2L.SCRIPTDIR  = "\systemroot\system32\bayu2L\"
+;
+bayu2L_SU256.SCRIPTFILE = "BAYU2FW.spt"                                                ; SU256LSB FIRMWARE
+bayu2L_SU512.SCRIPTFILE = "BAYU2FW.spt"                                                ; SU512LDB FIRMWARE
+bayu2L_SU256LDB.SCRIPTFILE = "BAYU2FW.spt"                                             ; SU256LDB FIRMWARE
+;
+bayu2L_S1006.SCRIPTFILE = "USB20ACCD_FW.spt"                                                ; S10420-1006 FIRMWARE
+bayu2L_S1106.SCRIPTFILE = "USB20ACCD_FW.spt"                                                ; S10420-1106 FIRMWARE
+
+
+;------------MOdify these strings to match your device-------------------------------;
+bayu2L_INSTALL    = "FBG Scan USB20BS (including USB20IR & USB20ACCD) Installation Disk"
+DeviceDesc_SU256        = "FBG Scan USB20BS/USB20IR (SU256LSB) Firmware Download"
+bayu2L_SU256.SvcDesc    = "FBG Scan USB20BS/USB20IR (SU256LSB)  Download Driver"
+
+DeviceDesc_SU512        = "FBG Scan USB20BS/USB20IR (SU512LSB) Firmware Download"
+bayu2L_SU512.SvcDesc    = "FBG Scan USB20BS/USB20IR (SU512LSB)  Download Driver"
+
+DeviceDesc_SU256LDB        = "FBG Scan USB20BS/USB20IR (SU256LDB 128odd,128even) Firmware Download"
+bayu2L_SU256LDB.SvcDesc    = "FBG Scan USB20BS/USB20IR (SU256LDB 128odd,128even) Download Driver"
+
+;;;;;
+
+DeviceDesc_S1006        = "FBG Scan USB20BS/USB20ACCD (S10420-1006) Firmware Download"
+bayu2L_S1006.SvcDesc    = "FBG Scan USB20BS/USB20ACCD (S10420-1006)  Download Driver"
+
+DeviceDesc_S1106        = "FBG Scan USB20BS/USB20ACCD (S10420-1106) Firmware Download"
+bayu2L_S1106.SvcDesc    = "FBG Scan USB20BS/USB20ACCD (S10420-1106)  Download Driver"
