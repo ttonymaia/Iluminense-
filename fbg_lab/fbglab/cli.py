@@ -90,6 +90,7 @@ def main(argv=None):
     p.add_argument("--duracao", type=float, default=None, help="segundos (padrao: ate Ctrl+C)")
     p.add_argument("--intervalo", type=float, default=0.0, help="pausa entre espectros (s)")
     p.add_argument("--saida", default="ensaios")
+    p.add_argument("--fbg", action="append", help="NOME:CENTRO[:JANELA[:L_mm]] (fica salvo para a analise)")
 
     p = sub.add_parser("rotina", help="rotina de laboratorio por protocolo")
     p.add_argument("protocolo")
@@ -102,6 +103,8 @@ def main(argv=None):
     p.add_argument("--fbg", action="append", help="NOME:CENTRO[:JANELA[:L_mm]]")
     p.add_argument("--ref", type=int, default=0, help="indice do passo de referencia")
     p.add_argument("--sem-tmm", action="store_true", help="pula o ajuste T-matrix (mais rapido)")
+    p.add_argument("--blocos", type=int, default=None,
+                   help="ensaio continuo: agrupa N espectros consecutivos em cada 'passo' (o 1o bloco e a referencia)")
 
     p = sub.add_parser("importar", help="cria sessao a partir de arquivos de texto (um passo por arquivo)")
     p.add_argument("arquivos", nargs="+")
@@ -137,7 +140,9 @@ def main(argv=None):
         return 0
 
     if a.cmd == "adquirir":
-        rotina.aquisicao_continua(_fonte(a), a.saida, a.nome, a.duracao, a.intervalo, canal=a.canal)
+        jan = _janelas(a.fbg)
+        meta = {"protocolo": {"fbgs": [vars(j) for j in jan]}} if jan else None
+        rotina.aquisicao_continua(_fonte(a), a.saida, a.nome, a.duracao, a.intervalo, canal=a.canal, meta=meta)
         return 0
 
     if a.cmd == "rotina":
@@ -153,6 +158,10 @@ def main(argv=None):
 
     if a.cmd == "analisar":
         s = Sessao.abrir(a.sessao)
+        print(f"{s.n} espectros carregados de {a.sessao}")
+        if a.blocos:
+            s = s.em_blocos(a.blocos)
+            print(f"{len(s.rotulos())} blocos de {a.blocos} espectros")
         prot = s.meta.get("protocolo")
         jan = _janelas(a.fbg, prot)
         if not jan:

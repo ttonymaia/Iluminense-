@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 
 import numpy as np
@@ -71,11 +72,11 @@ def _tabela_rapida(sessao: Sessao, passo: int, janelas: list[analise.JanelaFBG],
     for j in janelas:
         c = centros.get(j.nome, j.centro_nm)
         m = analise.metricas_pico(wl, pw, c, j.meia_largura_nm)
-        if j.rastrear and np.isfinite(m["lambda_cog"]):
-            centros[j.nome] = m["lambda_cog"]
+        if j.rastrear and np.isfinite(m["lambda_centro"]):
+            centros[j.nome] = m["lambda_centro"]
         d = (m["lambda_cog"] - centros.get(j.nome + "_ref", c)) * 1e3
         print(f"   {j.nome:<10}{m['lambda_cog']:>16.4f}{d:>14.1f}{m['fwhm']*1e3:>11.1f}{m['w20']*1e3:>10.1f}"
-              f"{m['assim_cog_max']*1e3:>12.1f}{m['n_subpicos']:>9d}")
+              f"{m['assim_cog_meio']*1e3:>12.1f}{m['n_subpicos']:>9d}")
 
 
 def executar(protocolo: dict, fonte=None, interativo: bool = True, analisar: bool = True) -> Sessao:
@@ -123,7 +124,7 @@ def executar(protocolo: dict, fonte=None, interativo: bool = True, analisar: boo
             wl, pw = sessao.media_do_passo(0)
             for j in janelas:
                 m = analise.metricas_pico(wl, pw, j.centro_nm, j.meia_largura_nm)
-                centros[j.nome] = m["lambda_cog"] if np.isfinite(m["lambda_cog"]) else j.centro_nm
+                centros[j.nome] = m["lambda_centro"] if np.isfinite(m["lambda_centro"]) else j.centro_nm
                 centros[j.nome + "_ref"] = centros[j.nome]
         _tabela_rapida(sessao, k, janelas, centros)
         sessao.salvar(csv_por_passo=False)   # salva a cada passo (seguranca)
@@ -139,6 +140,7 @@ def executar(protocolo: dict, fonte=None, interativo: bool = True, analisar: boo
         print("\nInterrompido pelo operador: salvando o que foi adquirido.")
     finally:
         sessao.salvar()
+        sessao.fechar()
         fonte.fechar()
 
     if analisar and len(sessao.rotulos()) > 0:
@@ -151,6 +153,10 @@ def relatorio(sessao: Sessao, janelas: list[analise.JanelaFBG], protocolo: dict 
     print("\nAnalisando...")
     if com_tmm is None:
         com_tmm = bool((protocolo or {}).get("ajuste_tmm", True))
+    n_ajustes = len(set(sessao.passo.tolist())) * len(janelas)
+    if com_tmm and n_ajustes > 60:
+        print(f"   {n_ajustes} ajustes T-matrix (~{n_ajustes / 60:.0f} min). Para ir mais rapido: --sem-tmm "
+              "ou blocos maiores.")
     res = analise.analisar_sessao(sessao, janelas, passo_ref=passo_ref, com_tmm=com_tmm)
     analise.salvar_tabela_csv(res["por_espectro"], os.path.join(sessao.pasta, "metricas_por_espectro.csv"))
     analise.salvar_tabela_csv(res["por_passo"], os.path.join(sessao.pasta, "metricas_por_passo.csv"))
@@ -170,8 +176,8 @@ def relatorio(sessao: Sessao, janelas: list[analise.JanelaFBG], protocolo: dict 
                        "(dn_ac, refletividade e FWHM sao parcialmente degenerados entre si: use-os apenas como "
                        "parametros do modelo, nao como medida da rede)", ""]
         linhas += ["| passo | desloc. (pm) | eps medio (ue) | FWHM (pm) | W20 (pm) | assim. (pm) | "
-                   "Delta eps ret. (ue) | Delta eps T-matrix (ue) | Delta eps dist. (ue) |",
-                   "|---|---|---|---|---|---|---|---|---|"]
+                   "Delta eps modelo (ue) | Delta eps T-matrix (ue) | Delta eps dist. (ue) | subpicos | salto entre subpicos (ue) |",
+                   "|---|---|---|---|---|---|---|---|---|---|---|"]
         for l in res["por_passo"]:
             if l["fbg"] != j.nome:
                 continue
@@ -179,14 +185,11 @@ def relatorio(sessao: Sessao, janelas: list[analise.JanelaFBG], protocolo: dict 
             def f(k, fat=1.0, d=1):
                 v = l.get(k, np.nan)
                 return "-" if v is None or not np.isfinite(v) else f"{v*fat:.{d}f}"
-            ret = f('delta_eps_ue')
-            sd = l.get("delta_eps_ue_sd", np.nan)
-            if ret != "-" and np.isfinite(sd):
-                v = abs(l.get("delta_eps_ue", 0.0))
-                ret += f" ± {sd:.0f}" if sd < max(100.0, 2 * v) else " (indef.)"
             linhas.append(f"| {l['rotulo']} | {f('deslocamento_pm')} | {f('eps_cog_ue')} | {f('fwhm',1e3)} | "
-                          f"{f('w20',1e3)} | {f('assim_cog_max',1e3)} | {ret} | "
-                          f"{f('tmm_delta_eps_ue')} | {f('dist_largura_equiv')} |")
+                          f"{f('w20',1e3)} | {f('assim_cog_meio',1e3)} | "
+                          f"{f('delta_eps_modelo_ue') if l.get('n_subpicos', 1) <= 1 else '(pico dividido)'} | "
+                          f"{f('tmm_delta_eps_ue')} | {f('dist_largura_equiv')} | {l.get('n_subpicos', '-')} | "
+                          f"{f('salto_subpicos_ue')} |")
         linhas.append("")
     linhas += ["## Figuras", ""] + [f"![{os.path.basename(p)}](figuras/{os.path.basename(p)})" for p in figs]
     linhas += ["", "## Como ler", "",
@@ -195,7 +198,14 @@ def relatorio(sessao: Sessao, janelas: list[analise.JanelaFBG], protocolo: dict 
                "- **assimetria** diferente de zero: perfil de deformacao nao linear ou parte da rede descolada.",
                "- **Delta eps T-matrix**: diferenca de deformacao entre as pontas da rede supondo gradiente linear "
                "(estimativa quantitativa; o sinal do gradiente nao e observavel pela reflexao).",
-               "- **Delta eps ret.**: ajuste rapido referencia (*) retangulo; tende a subestimar 10-20 %.",
+               "- **Delta eps modelo**: ajuste gaussiana (*) retangulo integrado em cada pixel (rapido, nao 'trava' na "
+               "grade de pixels; tende a subestimar ~5-15 %). Tambem calculado espectro a espectro "
+               "(metricas_por_espectro.csv) para ensaios continuos.",
+               "- **subpicos / salto entre subpicos**: o pico se dividiu. A separacao convertida em deformacao e o "
+               "salto de deformacao entre trechos da rede: assinatura de fissura cruzando a FBG (ou descolamento). "
+               "Nesse caso o lambda 'cravado' (CoG) fica ambiguo e pode pular entre os subpicos.",
+               "- **FWHM e W20** oscilam ~+-40 pm quando o pico atravessa os pixels (amostragem): so leve a serio "
+               "variacoes bem maiores, ou use os estimadores por modelo.",
                "- **Delta eps dist.**: sqrt(12) x desvio-padrao da distribuicao de deformacao obtida por deconvolucao "
                "(sem impor perfil; para gradiente linear equivale a Delta eps). Na referencia ele mostra o piso de "
                "resolucao do sistema (tipicamente 50-100 ue).",
@@ -209,32 +219,62 @@ def relatorio(sessao: Sessao, janelas: list[analise.JanelaFBG], protocolo: dict 
     return p
 
 
+def _leitor_de_eventos(sessao: Sessao, trava: threading.Lock):
+    """Thread: cada linha digitada (ENTER) vira um evento com hora e indice do espectro."""
+    while True:
+        try:
+            txt = input()
+        except (EOFError, KeyboardInterrupt, OSError):
+            return
+        with trava:
+            ev = sessao.marcar_evento(txt.strip())
+        print(f"\n   >> evento marcado no espectro {ev['indice']} ({ev['hora']}): {ev['texto']}")
+
+
 def aquisicao_continua(fonte, pasta_saida: str, nome: str, duracao_s: float | None, intervalo_s: float,
-                       canal=None, rotulo: str = "continuo", salvar_cada: int = 200) -> Sessao:
-    """Grava espectros continuamente (ensaio dinamico, fluencia, ciclagem). Ctrl+C encerra."""
-    sessao = Sessao.nova(pasta_saida, nome, {"modo": "continuo", "intervalo_s": intervalo_s})
+                       canal=None, rotulo: str = "continuo", marcar_eventos: bool = True,
+                       meta: dict | None = None) -> Sessao:
+    """Grava espectros continuamente (ensaio de fissuracao, fluencia, ciclagem). Ctrl+C encerra.
+
+    Cada espectro bruto vai direto para bruto/potencia.csv e bruto/lambda.csv (nao fica so na
+    memoria). Durante a gravacao, digite um texto e ENTER para marcar um evento
+    (ex.: "fissura 1 visivel", "carga 12 kN"); os eventos ficam no sessao.json e aparecem nas figuras.
+    """
+    m = {"modo": "continuo", "intervalo_s": intervalo_s}
+    m.update(meta or {})
+    sessao = Sessao.nova(pasta_saida, nome, m, gravar_bruto=True, em_memoria=False)
     k = sessao.novo_passo(rotulo)
-    print(f"Sessao: {sessao.pasta}  (Ctrl+C para encerrar)")
+    trava = threading.Lock()
+    print(f"Sessao: {sessao.pasta}")
+    print("Gravando. Digite um texto + ENTER para marcar um evento; Ctrl+C para encerrar.")
+    if marcar_eventos:
+        threading.Thread(target=_leitor_de_eventos, args=(sessao, trava), daemon=True).start()
     t0 = time.time()
+    falhas_seguidas = 0
     try:
         while duracao_s is None or time.time() - t0 < duracao_s:
             try:
-                sessao.adicionar(fonte.espectro(canal), k)
+                e = fonte.espectro(canal)
             except Exception as ex:  # noqa: BLE001
-                print(f"\n! falha: {ex}")
+                falhas_seguidas += 1
+                print(f"\n! falha na leitura ({falhas_seguidas}): {ex}")
                 time.sleep(0.5)
                 continue
+            falhas_seguidas = 0
+            with trava:
+                sessao.adicionar(e, k)
             if sessao.n % 10 == 0:
                 taxa = sessao.n / max(time.time() - t0, 1e-9)
-                print(f"\r{sessao.n} espectros  ({taxa:.1f}/s)", end="", flush=True)
-            if sessao.n % salvar_cada == 0:
-                sessao.salvar(csv_por_passo=False)
+                print(f"\r{sessao.n} espectros  ({taxa:.1f}/s)  {time.time() - t0:7.0f} s", end="", flush=True)
             if intervalo_s > 0:
                 time.sleep(intervalo_s)
     except KeyboardInterrupt:
         pass
     print()
-    sessao.salvar(csv_por_passo=False)
+    with trava:
+        sessao.salvar(csv_por_passo=False)
+        sessao.fechar()
     fonte.fechar()
-    print(f"{sessao.n} espectros salvos em {sessao.pasta}")
+    print(f"{sessao.n} espectros brutos salvos em {os.path.join(sessao.pasta, 'bruto')}")
+    print(f"Para analisar ao longo do tempo: python -m fbglab analisar \"{sessao.pasta}\" --blocos 20")
     return sessao

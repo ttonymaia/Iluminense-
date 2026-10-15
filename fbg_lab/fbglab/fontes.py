@@ -251,6 +251,8 @@ class FBGSimulada:
     gradiente_ue_mm: float = 0.0
     curvatura_ue_mm2: float = 0.0
     apodizacao: str = "uniforme"
+    degrau_ue: float = 0.0           # salto de deformacao numa posicao da rede (fissura cruzando a FBG)
+    pos_degrau_mm: float = 0.0       # posicao do salto, medida a partir do centro da rede
 
 
 class FonteSimulada:
@@ -277,8 +279,13 @@ class FonteSimulada:
         return 1505.503 + 0.18354 * p - 1.27e-5 * p ** 2
 
     def definir_estado(self, idx: int, eps_media_ue: float | None = None, gradiente_ue_mm: float | None = None,
-                       curvatura_ue_mm2: float | None = None):
+                       curvatura_ue_mm2: float | None = None, degrau_ue: float | None = None,
+                       pos_degrau_mm: float | None = None):
         f = self.fbgs[idx]
+        if degrau_ue is not None:
+            f.degrau_ue = degrau_ue
+        if pos_degrau_mm is not None:
+            f.pos_degrau_mm = pos_degrau_mm
         if eps_media_ue is not None:
             f.eps_media_ue = eps_media_ue
         if gradiente_ue_mm is not None:
@@ -293,6 +300,7 @@ class FonteSimulada:
         for f in self.fbgs:
             z = (np.arange(self.n_secoes) + 0.5) / self.n_secoes * f.comprimento_mm - f.comprimento_mm / 2
             eps = fisica.perfil_deformacao(z, f.eps_media_ue, f.gradiente_ue_mm, f.curvatura_ue_mm2)
+            eps = eps + np.where(z > f.pos_degrau_mm, f.degrau_ue, 0.0)
             apod = fisica.perfil_apodizacao(self.n_secoes, f.apodizacao)
             r += fisica.espectro_medido(wl, f.lambda0_nm, f.comprimento_mm, f.dn_ac, eps, self.fwhm, apod=apod)
         pw = self.escala * env * r + 0.5 + self.ruido * self.rng.standard_normal(len(wl))

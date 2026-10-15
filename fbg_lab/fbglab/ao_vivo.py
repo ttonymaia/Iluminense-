@@ -65,8 +65,8 @@ def executar(fonte, janelas: list[analise.JanelaFBG] | None = None, canal=None, 
             estado["ref"] = (ss[0].wl, np.mean([s.pw for s in ss], axis=0))
             for j in janelas:
                 m = analise.metricas_pico(estado["ref"][0], estado["ref"][1], j.centro_nm, j.meia_largura_nm)
-                if np.isfinite(m["lambda_cog"]):
-                    j.centro_nm = m["lambda_cog"]
+                if np.isfinite(m["lambda_centro"]):
+                    j.centro_nm = m["lambda_centro"]
             estado["ref_centros"] = {j.nome: j.centro_nm for j in janelas}
         elif ev.key == "n":
             estado["zoom"] = estado["zoom"] + 1 if estado["zoom"] + 1 < len(janelas) else -1
@@ -87,6 +87,7 @@ def executar(fonte, janelas: list[analise.JanelaFBG] | None = None, canal=None, 
                 print(f"gravando em {s.pasta}")
             else:
                 estado["grav"].salvar()
+                estado["grav"].fechar()
                 print(f"{estado['grav'].n} espectros salvos em {estado['grav'].pasta}")
                 estado["grav"] = None
         elif ev.key == "q":
@@ -125,11 +126,11 @@ def executar(fonte, janelas: list[analise.JanelaFBG] | None = None, canal=None, 
         rc = estado.get("ref_centros", {})
         for j in janelas:
             m = analise.metricas_pico(e.wl, e.pw, j.centro_nm, j.meia_largura_nm)
-            if j.rastrear and np.isfinite(m["lambda_cog"]):
-                j.centro_nm = m["lambda_cog"]
+            if j.rastrear and np.isfinite(m["lambda_centro"]):
+                j.centro_nm = m["lambda_centro"]
             d = (m["lambda_cog"] - rc[j.nome]) * 1e3 if j.nome in rc else float("nan")
             linhas.append(f"{j.nome:<7}{m['lambda_cog']:>11.4f}{d:>8.1f}{m['fwhm']*1e3:>7.0f}"
-                          f"{m['assim_cog_max']*1e3:>7.1f}")
+                          f"{m['assim_cog_meio']*1e3:>7.1f}")
         taxa = estado["n"] / max(time.time() - estado["t0"], 1e-9)
         linhas += ["", f"{taxa:.1f} espectros/s", "gravando: " + ("SIM" if estado["grav"] is not None else "não")]
         txt.set_text("\n".join(linhas))
@@ -139,5 +140,6 @@ def executar(fonte, janelas: list[analise.JanelaFBG] | None = None, canal=None, 
     plt.show()
     if estado["grav"] is not None:
         estado["grav"].salvar()
+        estado["grav"].fechar()
     fonte.fechar()
     return anim

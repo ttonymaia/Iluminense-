@@ -100,3 +100,37 @@ def test_web_e_sessao(tmp_path):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_gravacao_bruta_recupera_apos_queda(tmp_path):
+    """Cada espectro vai para bruto/*.csv na hora; sem salvar() (queda), abrir() recupera tudo."""
+    src = fontes.FonteSimulada(semente=1)
+    s = Sessao.nova(str(tmp_path), "queda", em_memoria=False)
+    k = s.novo_passo("continuo")
+    esperado = []
+    for _ in range(7):
+        e = src.espectro()
+        esperado.append(e.pw.copy())
+        s.adicionar(e, k)
+    s.marcar_evento("fissura 1")
+    s.gravador.flush()              # o que o SO ja tem; nao chama salvar() de proposito
+    s2 = Sessao.abrir(s.pasta)
+    assert s2.n == 7
+    assert np.allclose(s2.pw[3], esperado[3])
+    assert s2.meta["eventos"][0]["indice"] == 7
+    b = s2.em_blocos(3)
+    assert b.rotulos()[0].startswith("t=") and len(b.rotulos()) == 3
+
+
+def test_cog_sem_travamento_no_pixel():
+    src = fontes.FonteSimulada([fontes.FBGSimulada(1550.0, 10.0, 4e-5)], ruido=0.0)
+    k = fisica.sensibilidade_pm_por_ue(1550) * 1e-3
+    ref = None
+    erros = []
+    for eps in np.arange(0, 300, 13):
+        src.definir_estado(0, eps_media_ue=eps)
+        e = src.espectro()
+        c = analise.metricas_pico(e.wl, e.pw, 1550.1, 1.5)["lambda_cog"]
+        ref = c if ref is None else ref
+        erros.append((c - ref) / k - eps)
+    assert np.max(np.abs(erros)) < 3.0     # microstrain

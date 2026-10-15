@@ -53,6 +53,13 @@ def _cores_ordinais(n: int) -> list[str]:
     return [rampa[i] for i in idx]
 
 
+def _poucos(n: int, maximo: int = 15) -> np.ndarray:
+    """Indices de ate 'maximo' itens igualmente espacados (sempre inclui o primeiro e o ultimo)."""
+    if n <= maximo:
+        return np.arange(n)
+    return np.unique(np.linspace(0, n - 1, maximo).round().astype(int))
+
+
 def _grade_comum(wl: np.ndarray, lo: float, hi: float) -> np.ndarray:
     passo = float(np.median(np.abs(np.diff(wl[0])))) / 2
     return np.arange(lo, hi, passo)
@@ -104,29 +111,46 @@ def espectrograma(sessao, resultado: dict, nome_fbg: str, pasta: str, normalizar
     n = img.shape[0]
     ax.imshow(img, aspect="auto", origin="lower", cmap=CMAP_SEQ, vmin=0, vmax=1 if normalizar else None,
               extent=[grade[0], grade[-1], -0.5, n - 0.5], interpolation="nearest")
-    ax.plot(cogs, np.arange(n), color=CATEG[1], lw=1.0, label="λ CoG (o que o ILLumiSense entrega)")
+    ax.plot(cogs, np.arange(n), color=CATEG[1], lw=1.0, label="λ CoG (equivale ao valor 'cravado')")
     ax.axvline(c0, color=MUDO, lw=1, ls="--")
     passo = sessao.passo
     rot = sessao.rotulos()
     trocas = np.flatnonzero(np.diff(passo)) + 1
-    for tr in trocas:
+    for tr in (trocas if len(trocas) <= 40 else []):    # muitos blocos: linhas de divisao poluiriam
         ax.axhline(tr - 0.5, color=TINTA2, lw=0.6, alpha=0.6)
         ax2.axhline(tr - 0.5, color=TINTA2, lw=0.6, alpha=0.6)
     meio = []
     for k in sorted(set(passo.tolist())):
         idx = np.flatnonzero(passo == k)
         meio.append((idx.mean(), rot[k] if k < len(rot) else str(k)))
-    ax.set_yticks([m[0] for m in meio])
-    ax.set_yticklabels([m[1] for m in meio])
+    sel = _poucos(len(meio))
+    ax.set_yticks([meio[i][0] for i in sel])
+    ax.set_yticklabels([meio[i][1] for i in sel])
+    for ev in sessao.meta.get("eventos", []):
+        y = ev["indice"] - 0.5
+        for a_ in (ax, ax2):
+            a_.axhline(y, color=TINTA, lw=1.2, ls="--")
+        ax.annotate(ev["texto"], (grade[-1], y), textcoords="offset points", xytext=(-4, 3), ha="right",
+                    fontsize=7, color=TINTA, bbox=dict(boxstyle="round,pad=0.2", fc=SUPERFICIE, ec="none", alpha=0.8))
     ax.grid(False)
     ax.set_xlabel("Comprimento de onda (nm)")
     ax.set_ylabel("Passo / espectro")
     ax.set_title(f"{nome_fbg} — espectrograma (intensidade normalizada)")
     ax.legend(loc="lower right", fontsize=8)
-    fw = np.array([l["fwhm"] for l in linhas], float) * 1e3
-    ax2.plot(fw, np.arange(n), color=CATEG[0], lw=1.2)
-    ax2.set_xlabel("FWHM (pm)")
-    ax2.set_title("Largura")
+    if "delta_eps_modelo_ue" in linhas[0]:
+        de = np.array([l.get("delta_eps_modelo_ue", np.nan) for l in linhas], float)
+        sp = np.array([l.get("salto_subpicos_ue", np.nan) for l in linhas], float)
+        ax2.plot(de, np.arange(n), color=CATEG[0], lw=1.0, label="chirp (modelo)")
+        if np.any(np.isfinite(sp)):
+            ax2.plot(sp, np.arange(n), ".", color=CATEG[1], ms=2.5, label="salto entre subpicos")
+            ax2.legend(fontsize=7, loc="lower right")
+        ax2.set_xlabel("Δε na rede (µε)")
+        ax2.set_title("Não uniformidade")
+    else:
+        fw = np.array([l["fwhm"] for l in linhas], float) * 1e3
+        ax2.plot(fw, np.arange(n), color=CATEG[0], lw=1.0)
+        ax2.set_xlabel("FWHM (pm)")
+        ax2.set_title("Largura")
     fig.tight_layout()
     p = os.path.join(pasta, f"espectrograma_{nome_fbg}.png")
     fig.savefig(p, dpi=150)
@@ -143,6 +167,7 @@ def sobreposicao(sessao, resultado: dict, nome_fbg: str, pasta: str) -> str:
     lo = np.nanmin(cogs + [c0]) - j["meia_largura_nm"]
     hi = np.nanmax(cogs + [c0]) + j["meia_largura_nm"]
     fig, (ax, axn) = plt.subplots(1, 2, figsize=(11, 4.2))
+    res = [res[i] for i in _poucos(len(res), 12)]     # no maximo 12 curvas (blocos de ensaio continuo)
     cores = _cores_ordinais(len(res))
     for l, cor in zip(res, cores):
         wl, pw = sessao.media_do_passo(l["passo"])
@@ -178,30 +203,32 @@ def metricas(resultado: dict, nome_fbg: str, pasta: str) -> str:
         return np.array([l.get(k, np.nan) for l in res], float) * fator
 
     fig, axs = plt.subplots(2, 2, figsize=(11, 7), sharex=True)
+    ms = 5 if len(res) <= 30 else 2
     a = axs[0, 0]
     chave = "eps_comp_ue" if "eps_comp_ue" in res[0] else "eps_cog_ue"
-    a.plot(x, col(chave), "o-", color=CATEG[0], ms=5, label="ε médio pelo CoG")
+    a.plot(x, col(chave), "o-", color=CATEG[0], ms=ms, label="ε médio pelo CoG")
     if "tmm_eps_media_ue" in res[0]:
-        a.plot(x, col("tmm_eps_media_ue"), "s--", color=CATEG[1], ms=5, lw=1.5, label="ε médio (T-matrix)")
+        a.plot(x, col("tmm_eps_media_ue"), "s--", color=CATEG[1], ms=ms, lw=1.5, label="ε médio (T-matrix)")
     a.set_ylabel("Deformação média (µε)")
     a.set_title("Deformação média (o que o pico informa)")
     a.legend(fontsize=8)
 
     a = axs[0, 1]
-    a.plot(x, col("fwhm", 1e3), "o-", color=CATEG[0], ms=5, label="FWHM (50 %)")
-    a.plot(x, col("w20", 1e3), "s-", color=CATEG[1], ms=5, label="largura a 20 %")
+    a.plot(x, col("fwhm", 1e3), "o-", color=CATEG[0], ms=ms, label="FWHM (50 %)")
+    a.plot(x, col("w20", 1e3), "s-", color=CATEG[1], ms=ms, label="largura a 20 %")
     a.set_ylabel("Largura (pm)")
     a.set_title("Alargamento do pico")
     a.legend(fontsize=8)
 
     a = axs[1, 0]
-    v, sd = col("delta_eps_ue"), col("delta_eps_ue_sd")
-    sd = np.where(np.isfinite(sd) & (sd < np.maximum(100.0, 2 * np.abs(v))), sd, np.nan)  # barra so se confiavel
-    a.errorbar(x, v, yerr=sd, fmt="o-", color=CATEG[0], ms=5, capsize=3, label="ref ⊛ retângulo (indicador)")
+    if "delta_eps_modelo_ue" in res[0]:
+        a.plot(x, col("delta_eps_modelo_ue"), "o-", color=CATEG[0], ms=ms, label="gaussiana ⊛ retângulo (por pixel)")
     if "tmm_delta_eps_ue" in res[0]:
-        a.plot(x, col("tmm_delta_eps_ue"), "s-", color=CATEG[1], ms=5, label="T-matrix (gradiente linear)")
+        a.plot(x, col("tmm_delta_eps_ue"), "s-", color=CATEG[1], ms=ms, label="T-matrix (gradiente linear)")
+    if np.any(np.isfinite(col("salto_subpicos_ue"))):
+        a.plot(x, col("salto_subpicos_ue"), "D", color=CATEG[3], ms=ms + 1, label="salto entre subpicos (fissura)")
     if "dist_largura_equiv" in res[0]:
-        a.plot(x, col("dist_largura_equiv"), "^-", color=CATEG[2], ms=6, lw=1.5,
+        a.plot(x, col("dist_largura_equiv"), "^-", color=CATEG[2], ms=ms + 1, lw=1.5,
                label="distribuição: √12·σ (deconvolução)")
         piso = col("dist_largura_equiv")[0]
         if np.isfinite(piso):
@@ -213,15 +240,16 @@ def metricas(resultado: dict, nome_fbg: str, pasta: str) -> str:
     a.legend(fontsize=8)
 
     a = axs[1, 1]
-    a.plot(x, col("assim_cog_max", 1e3), "o-", color=CATEG[0], ms=5, label="λ CoG − λ máx")
+    a.plot(x, col("assim_cog_meio", 1e3), "o-", color=CATEG[0], ms=ms, label="λ CoG − centro da FWHM")
     a.axhline(0, color=EIXO, lw=1)
     a.set_ylabel("Assimetria (pm)")
     a.set_title("Assimetria do pico")
     a.legend(fontsize=8)
 
+    sel = _poucos(len(rot))
     for a in axs[1]:
-        a.set_xticks(x)
-        a.set_xticklabels(rot, rotation=45, ha="right")
+        a.set_xticks(x[sel])
+        a.set_xticklabels([rot[i] for i in sel], rotation=45, ha="right")
         a.set_xlabel("Passo")
     fig.suptitle(f"{nome_fbg} — métricas por passo", fontweight="bold")
     fig.tight_layout()
@@ -241,13 +269,14 @@ def distribuicao(resultado: dict, nome_fbg: str, pasta: str) -> str | None:
     hi = max(e.max() for _, e, _ in dist)
     grade = np.linspace(lo, hi, 400)
     img = np.vstack([np.interp(grade, e, p / max(p.max(), 1e-12), left=0.0, right=0.0) for _, e, p in dist])
-    fig, ax = plt.subplots(figsize=(9, 0.45 * len(dist) + 2.2))
+    fig, ax = plt.subplots(figsize=(9, min(0.45 * len(dist) + 2.2, 9.0)))
     ax.imshow(img, aspect="auto", origin="lower", cmap=CMAP_SEQ, vmin=0, vmax=1,
               extent=[grade[0], grade[-1], -0.5, len(dist) - 0.5], interpolation="nearest")
     medias = [np.sum(e * p) for _, e, p in dist]
-    ax.plot(medias, np.arange(len(dist)), "o", color=CATEG[1], ms=4, label="média")
-    ax.set_yticks(np.arange(len(dist)))
-    ax.set_yticklabels([rot.get(k, str(k)) for k, _, _ in dist])
+    ax.plot(medias, np.arange(len(dist)), "o" if len(dist) <= 40 else "-", color=CATEG[1], ms=4, label="média")
+    sel = _poucos(len(dist))
+    ax.set_yticks(sel)
+    ax.set_yticklabels([rot.get(dist[i][0], str(dist[i][0])) for i in sel])
     ax.grid(False)
     ax.set_xlabel("Deformação local (µε) relativa à referência")
     ax.set_ylabel("Passo")

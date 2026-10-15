@@ -159,6 +159,16 @@ Números desta unidade (`python -m fbglab calib`):
   ser medido: repita a referência várias vezes e veja a dispersão de Δε.
 - O **sinal** do gradiente não é observável: a refletância de uma estrutura
   sem perdas é a mesma vista dos dois lados.
+- Com o pico ocupando ~2 pixels, estimadores baseados no topo ou em
+  cruzamentos de nível "travam" na grade de pixels: o CoG com limiar de 50 %
+  erra até ~15 µε e a FWHM oscila ~±40 pm conforme o pico atravessa os
+  pixels. O `fbglab` usa CoG com limiar de 20 % sobre perfil interpolado
+  (erro ~2 µε no simulador) e um modelo contínuo integrado por pixel para a
+  largura. Vale testar se o mesmo efeito aparece no valor "cravado" do
+  ILLumiSense (degraus periódicos de ~0,17 nm de período ao varrer a carga).
+- Quando o pico se **divide** (fissura cruzando a rede), o CoG passa a
+  representar uma média ponderada instável dos subpicos e pode pular entre
+  eles; só o espectro bruto mostra o que aconteceu.
 - **Saturação** do detector achata o topo do pico e imita chirp. Mantenha
   tempo de integração e sensibilidade **fixos** durante o ensaio (desligue o
   Autoset) e o pico abaixo de ~90 % da escala.

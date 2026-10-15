@@ -3,7 +3,11 @@
 Responde nas mesmas rotas e com o mesmo formato JSON descobertos no ILLWS.lvws:
     /ILLWS/GetSpectrum/<canal>, /ILLWS/GetSpectrumBasic/<canal>, /ILLWS/GetPeaks/<canal>,
     /ILLWS/GetHWInformation/, /ILLWS/GetSerialNumber/, ...
-A deformacao simulada varia lentamente com o tempo (rampa + gradiente crescente).
+Roteiro simulado (repete a cada 60 s), para treinar a leitura das figuras:
+    FBG1: deformacao uniforme em rampa;
+    FBG2: rampa + gradiente crescente (chirp) e, a partir de 30 s, uma "fissura" que abre no
+          meio da rede (salto de deformacao crescente -> o pico alarga e se divide em dois);
+    FBG3: livre (referencia de temperatura).
 """
 
 from __future__ import annotations
@@ -28,9 +32,11 @@ def criar_servidor(porta: int = 8002, caminho_calib: str | None = None, rampa_ue
 
     def espectro():
         t = time.time() - t0
+        tc = t % 60.0
         with trava:
-            # FBG2: deformacao media em rampa e gradiente crescente (chirp); FBG3: so temperatura
-            fonte.definir_estado(1, eps_media_ue=rampa_ue_s * t % 1500, gradiente_ue_mm=(rampa_ue_s * t % 1500) / 15)
+            fonte.definir_estado(0, eps_media_ue=rampa_ue_s * tc)
+            fonte.definir_estado(1, eps_media_ue=rampa_ue_s * tc, gradiente_ue_mm=rampa_ue_s * tc / 30,
+                                 degrau_ue=max(0.0, tc - 30.0) * 60.0)
             return fonte.espectro()
 
     class H(BaseHTTPRequestHandler):

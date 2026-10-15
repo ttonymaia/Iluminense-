@@ -26,11 +26,12 @@ FWHM; use media de varios espectros e compare sempre com a referencia.
 
 from __future__ import annotations
 
+import time
 import warnings
 from dataclasses import dataclass, asdict
 
 import numpy as np
-from scipy import optimize, signal
+from scipy import interpolate, optimize, signal, special
 
 from . import fisica
 
@@ -92,6 +93,24 @@ def detectar_picos(wl: np.ndarray, pw: np.ndarray, prominencia_rel: float = 0.15
     return wl[pk]
 
 
+def centro_gravidade(x: np.ndarray, yb: np.ndarray, limiar: float = 0.5, passo_nm: float = 0.001) -> float:
+    """CoG da regiao contigua ao maximo acima de limiar*maximo, sobre interpolacao PCHIP."""
+    if len(x) < 3:
+        return float(x[int(np.argmax(yb))])
+    xf = np.arange(x[0], x[-1], passo_nm)
+    yf = interpolate.PchipInterpolator(x, yb)(xf)
+    i = int(np.argmax(yf))
+    nivel = limiar * yf[i]
+    e = i
+    while e > 0 and yf[e - 1] >= nivel:
+        e -= 1
+    d = i
+    while d < len(yf) - 1 and yf[d + 1] >= nivel:
+        d += 1
+    w = yf[e:d + 1] - nivel
+    return float(np.sum(xf[e:d + 1] * w) / np.sum(w)) if np.sum(w) > 0 else float(xf[i])
+
+
 def _cruzamento(x0, x1, y0, y1, nivel):
     if y1 == y0:
         return 0.5 * (x0 + x1)
@@ -119,11 +138,12 @@ def largura_no_nivel(x: np.ndarray, y: np.ndarray, i_max: int, frac: float):
 # ----------------------------------------------------------------------------- metricas
 
 def metricas_pico(wl: np.ndarray, pw: np.ndarray, centro: float, meia: float,
-                  limiar_cog: float = 0.5, escala: str = "auto") -> dict:
+                  limiar_cog: float = 0.2, escala: str = "auto") -> dict:
     """Metricas de um pico de FBG dentro da janela [centro - meia, centro + meia]."""
     nan = float("nan")
-    out = dict(lambda_max=nan, lambda_cog=nan, lambda_gauss=nan, pot_max=nan, base=nan, fwhm=nan,
-               w20=nan, assim_cog_max=nan, razao_lados=nan, assimetria=nan, n_subpicos=0, area=nan,
+    out = dict(lambda_max=nan, lambda_cog=nan, lambda_centro=nan, lambda_gauss=nan, pot_max=nan, base=nan, fwhm=nan,
+               w20=nan, assim_cog_meio=nan, razao_lados=nan, assimetria=nan, n_subpicos=0,
+               separacao_subpicos_nm=nan, razao_subpicos=nan, area=nan,
                snr=nan)
     x, y = recortar(wl, linearizar(pw, escala), centro, meia)
     if len(x) < 5:
@@ -145,19 +165,26 @@ def metricas_pico(wl: np.ndarray, pw: np.ndarray, centro: float, meia: float,
         out["lambda_max"] = float(np.interp(i + d, np.arange(len(x)), x))
     else:
         out["lambda_max"] = float(x[i])
-    # centro de gravidade acima do limiar (como o ILLumiSense)
-    m = yb >= limiar_cog * yb[i]
-    w = yb[m] - limiar_cog * yb[i]
-    out["lambda_cog"] = float(np.sum(x[m] * w) / np.sum(w)) if np.sum(w) > 0 else float(x[i])
+    # centro de gravidade acima do limiar, calculado sobre o perfil interpolado (passo de 1 pm).
+    # Com o pico ocupando ~2 pixels, o CoG direto nos pixels "trava" no centro do pixel.
+    out["lambda_cog"] = centro_gravidade(x, yb, limiar_cog)
+    # centro de TODA a feicao (todos os pixels acima de 10 %, mesmo separados): quando o pico se
+    # divide (fissura), o CoG pula entre os subpicos; este valor fica no meio e e usado para
+    # rastrear a janela
+    mt = yb >= 0.1 * yb[i]
+    out["lambda_centro"] = float(np.sum(x[mt] * yb[mt]) / np.sum(yb[mt]))
     # larguras
     fwhm, xe, xd = largura_no_nivel(x, yb, i, 0.5)
     out["fwhm"] = fwhm
     out["w20"] = largura_no_nivel(x, yb, i, 0.2)[0]
     if np.isfinite(fwhm):
-        lm = out["lambda_max"]
+        lm = out["lambda_cog"]
         esq, dir_ = lm - xe, xd - lm
         out["razao_lados"] = float(dir_ / esq) if esq > 0 else nan
-    out["assim_cog_max"] = out["lambda_cog"] - out["lambda_max"]
+    # assimetria: CoG (limiar baixo, pega a cauda) - ponto medio da FWHM. Menos sensivel ao "travamento"
+    # no pixel do que usar o maximo do pico.
+    if np.isfinite(fwhm):
+        out["assim_cog_meio"] = out["lambda_cog"] - 0.5 * (xe + xd)
     # momentos (regiao acima de 10 %)
     m10 = yb >= 0.1 * yb[i]
     pesos = np.clip(yb[m10], 0, None)
@@ -171,6 +198,21 @@ def metricas_pico(wl: np.ndarray, pw: np.ndarray, centro: float, meia: float,
     # subpicos
     pk, _ = signal.find_peaks(yb, height=0.3 * yb[i], prominence=0.1 * yb[i])
     out["n_subpicos"] = int(len(pk))
+    if len(pk) >= 2:
+        # dois maiores subpicos: a separacao e o salto de deformacao entre os trechos da rede
+        # (assinatura tipica de fissura cruzando a FBG ou de descolamento parcial)
+        dois = pk[np.argsort(yb[pk])[-2:]]
+        pos = []
+        for j in dois:
+            if 0 < j < len(x) - 1:
+                y0, y1, y2 = yb[j - 1], yb[j], yb[j + 1]
+                den = y0 - 2 * y1 + y2
+                d = float(np.clip(0.5 * (y0 - y2) / den, -0.5, 0.5)) if den != 0 else 0.0
+                pos.append(float(np.interp(j + d, np.arange(len(x)), x)))
+            else:
+                pos.append(float(x[j]))
+        out["separacao_subpicos_nm"] = abs(pos[1] - pos[0])
+        out["razao_subpicos"] = float(yb[dois[0]] / yb[dois[1]])
     # ajuste gaussiano (referencia de comparacao)
     try:
         sel = yb >= 0.2 * yb[i]
@@ -329,6 +371,84 @@ def estatisticas_distribuicao(eps: np.ndarray, p: np.ndarray) -> dict:
                 largura_equiv=float(np.sqrt(12) * sd))
 
 
+# ----------------------------------------------------------------------------- gaussiana (*) retangulo por pixel
+
+_SQ2 = np.sqrt(2.0)
+
+
+def _int_phi(u):
+    """Antiderivada da normal acumulada: int Phi(u) du = u*Phi(u) + phi(u)."""
+    return u * 0.5 * (1 + special.erf(u / _SQ2)) + np.exp(-0.5 * u * u) / np.sqrt(2 * np.pi)
+
+
+def modelo_gauss_ret(lam, passo, delta, largura, sigma, amp, base):
+    """Pico = amp * [gaussiana(sigma) (*) retangulo(largura)] centrado em delta, INTEGRADO na largura de
+    cada pixel (como o detector mede). Por ser um modelo continuo, nao 'trava' na grade de pixels."""
+    a = lam - passo / 2 - delta
+    c = lam + passo / 2 - delta
+    if largura < 1e-4:
+        phi = 0.5 * (special.erf(c / sigma / _SQ2) - special.erf(a / sigma / _SQ2))
+        return amp * phi / passo + base
+    h = largura / 2
+    v = sigma * (_int_phi((c + h) / sigma) - _int_phi((a + h) / sigma)
+                 - _int_phi((c - h) / sigma) + _int_phi((a - h) / sigma)) / (largura * passo)
+    return amp * v + base
+
+
+def ajustar_gauss_ret(wl, pw, centro: float, meia: float, sigma: float | None = None,
+                      escala: str = "auto") -> dict:
+    """Sem sigma: ajusta a referencia (largura=0) e devolve sigma (resposta do instrumento + rede).
+    Com sigma fixo: ajusta deslocamento e largura do retangulo (= chirp, em nm)."""
+    nan = float("nan")
+    out = dict(centro_nm=nan, largura_nm=nan, sigma_nm=nan, amp=nan, rms=nan, ok=False)
+    x, y = recortar(wl, linearizar(pw, escala), centro, meia)
+    if len(x) < 6:
+        return out
+    passo = np.gradient(x)
+    b0 = linha_base(y)
+    yb = y - b0
+    i = int(np.argmax(yb))
+    area = np.trapezoid(np.clip(yb, 0, None), x) if hasattr(np, "trapezoid") else np.trapz(np.clip(yb, 0, None), x)
+    c0 = centro_gravidade(x, yb, 0.2)
+    if sigma is None:
+        c0 = float(np.clip(c0, x[0] + 1e-6, x[-1] - 1e-6))
+        r = optimize.least_squares(lambda p: modelo_gauss_ret(x, passo, p[0], 0.0, p[1], p[2], p[3]) - yb,
+                                   [c0, 0.12, max(area, 1e-9), 0.0],
+                                   bounds=([x[0], 0.01, 0, -np.inf], [x[-1], 2.0, np.inf, np.inf]),
+                                   x_scale=[0.05, 0.05, max(area, 1e-9), max(0.05 * yb[i], 1e-9)])
+        out.update(centro_nm=float(r.x[0]), largura_nm=0.0, sigma_nm=float(r.x[1]), amp=float(r.x[2]),
+                   rms=float(np.sqrt(np.mean(r.fun ** 2))), ok=bool(r.success))
+        return out
+    # chute inicial da largura pela variancia (convolucao soma variancias: var = sigma^2 + W^2/12)
+    m = yb > 0.1 * yb[i]
+    w_ = np.clip(yb[m], 0, None)
+    mu = np.sum(x[m] * w_) / w_.sum()
+    var = np.sum((x[m] - mu) ** 2 * w_) / w_.sum()
+    w0 = float(np.sqrt(max(12 * (var - sigma ** 2), 0.0004)))
+    melhor = None
+    c0 = float(np.clip(c0, x[0] + 1e-6, x[-1] - 1e-6))
+    acima = x[yb > 0.1 * yb[i]]
+    w_ext = float(np.ptp(acima)) - 2 * sigma if len(acima) > 1 else 0.05   # extensao total da feicao
+    c_ext = float(0.5 * (acima.min() + acima.max())) if len(acima) > 1 else c0
+    for c_ini, wi in ((c0, w0), (c0, 0.05), (c_ext, w_ext)):
+        wi = float(np.clip(wi, 0.0, 1.98 * meia))
+        c_ini = float(np.clip(c_ini, x[0] + 1e-6, x[-1] - 1e-6))
+        try:
+            r = optimize.least_squares(lambda p: modelo_gauss_ret(x, passo, p[0], p[1], sigma, p[2], p[3]) - yb,
+                                       [c_ini, wi, max(area, 1e-9), 0.0],
+                                       bounds=([x[0], 0.0, 0, -np.inf], [x[-1], 2 * meia, np.inf, np.inf]),
+                                       x_scale=[0.05, 0.05, max(area, 1e-9), max(0.05 * yb[i], 1e-9)])
+        except ValueError:
+            continue
+        if melhor is None or r.cost < melhor.cost:
+            melhor = r
+    if melhor is None:
+        return out
+    out.update(centro_nm=float(melhor.x[0]), largura_nm=float(melhor.x[1]), sigma_nm=float(sigma),
+               amp=float(melhor.x[2]), rms=float(np.sqrt(np.mean(melhor.fun ** 2))), ok=bool(melhor.success))
+    return out
+
+
 # ----------------------------------------------------------------------------- ajuste T-matrix
 
 def ajustar_tmm_referencia(wl, pw, janela: JanelaFBG, escala: str = "auto", n_secoes: int = 30) -> dict:
@@ -405,20 +525,22 @@ def ajustar_tmm_gradiente(wl, pw, janela: JanelaFBG, ref_tmm: dict, quadratico: 
 
 def analisar_sessao(sessao, janelas: list[JanelaFBG], passo_ref: int = 0, escala: str = "auto",
                     p_e: float = fisica.P_E, com_distribuicao: bool = True, com_tmm: bool = True,
-                    limiar_cog: float = 0.5, reg_dist: float = 0.2) -> dict:
+                    limiar_cog: float = 0.2, reg_dist: float = 0.2, chirp_por_espectro: bool = True) -> dict:
     """Calcula metricas por espectro e por passo (espectro medio) para cada FBG."""
     wl_all, pw_all, passo_all, t_all = sessao.wl, sessao.pw, sessao.passo, sessao.t
     rot = sessao.rotulos()
     wl_ref, pw_ref = sessao.media_do_passo(passo_ref)
 
-    refs, centros_ref, tmm_ref = {}, {}, {}
+    refs, centros_ref, tmm_ref, sig_ref, cog_ref = {}, {}, {}, {}, {}
     for jf in janelas:
         c = jf.centro_nm
         m0 = metricas_pico(wl_ref, pw_ref, c, jf.meia_largura_nm, limiar_cog, escala)
-        if np.isfinite(m0["lambda_cog"]) and jf.rastrear:
-            c = m0["lambda_cog"]
-        centros_ref[jf.nome] = c
+        if np.isfinite(m0["lambda_centro"]) and jf.rastrear:
+            c = m0["lambda_centro"]
+        centros_ref[jf.nome] = c          # centro da janela (feicao inteira)
+        cog_ref[jf.nome] = m0["lambda_cog"] if np.isfinite(m0["lambda_cog"]) else c   # base do deslocamento
         refs[jf.nome] = PerfilReferencia(wl_ref, pw_ref, c, jf.meia_largura_nm, escala=escala)
+        sig_ref[jf.nome] = ajustar_gauss_ret(wl_ref, pw_ref, c, jf.meia_largura_nm, escala=escala)["sigma_nm"]
         if com_tmm:
             jtmp = JanelaFBG(jf.nome, c, jf.meia_largura_nm, jf.comprimento_mm, apodizacao=jf.apodizacao)
             try:
@@ -429,18 +551,30 @@ def analisar_sessao(sessao, janelas: list[JanelaFBG], passo_ref: int = 0, escala
     # ---- por espectro
     linhas = []
     ultimo = dict(centros_ref)
+    t_ini = time.time()
     for n in range(len(t_all)):
+        if n and n % 500 == 0:
+            dt = time.time() - t_ini
+            print(f"   espectro {n}/{len(t_all)}  (faltam ~{dt / n * (len(t_all) - n) / 60:.1f} min)")
         for jf in janelas:
             c = ultimo[jf.nome] if jf.rastrear else jf.centro_nm
             m = metricas_pico(wl_all[n], pw_all[n], c, jf.meia_largura_nm, limiar_cog, escala)
-            if jf.rastrear and np.isfinite(m["lambda_cog"]):
-                ultimo[jf.nome] = m["lambda_cog"]
+            if jf.rastrear and np.isfinite(m["lambda_centro"]):
+                ultimo[jf.nome] = m["lambda_centro"]
             k = fisica.sensibilidade_pm_por_ue(centros_ref[jf.nome], p_e) * 1e-3
-            linhas.append(dict(indice=n, t=t_all[n] - t_all[0], passo=int(passo_all[n]),
-                               rotulo=rot[passo_all[n]] if passo_all[n] < len(rot) else "",
-                               fbg=jf.nome, **m,
-                               deslocamento_pm=(m["lambda_cog"] - centros_ref[jf.nome]) * 1e3,
-                               eps_cog_ue=(m["lambda_cog"] - centros_ref[jf.nome]) / k))
+            lin = dict(indice=n, t=t_all[n] - t_all[0], passo=int(passo_all[n]),
+                       rotulo=rot[passo_all[n]] if passo_all[n] < len(rot) else "",
+                       fbg=jf.nome, **m,
+                       deslocamento_pm=(m["lambda_cog"] - cog_ref[jf.nome]) * 1e3,
+                       eps_cog_ue=(m["lambda_cog"] - cog_ref[jf.nome]) / k,
+                       eps_centro_ue=(m["lambda_centro"] - centros_ref[jf.nome]) / k,
+                       salto_subpicos_ue=m["separacao_subpicos_nm"] / k)
+            if chirp_por_espectro and np.isfinite(sig_ref[jf.nome]) and np.isfinite(m["lambda_cog"]):
+                gr = ajustar_gauss_ret(wl_all[n], pw_all[n], m["lambda_centro"], jf.meia_largura_nm,
+                                       sig_ref[jf.nome], escala)
+                # pico dividido: o modelo de gradiente suave nao se aplica (use salto_subpicos_ue)
+                lin["delta_eps_modelo_ue"] = gr["largura_nm"] / k if m["n_subpicos"] <= 1 else float("nan")
+            linhas.append(lin)
 
     # ---- por passo (espectro medio: mais SNR para medir forma)
     resumo, distribs = [], {}
@@ -450,8 +584,8 @@ def analisar_sessao(sessao, janelas: list[JanelaFBG], passo_ref: int = 0, escala
         for jf in janelas:
             c = ultimo[jf.nome] if jf.rastrear else jf.centro_nm
             m = metricas_pico(wl_m, pw_m, c, jf.meia_largura_nm, limiar_cog, escala)
-            if jf.rastrear and np.isfinite(m["lambda_cog"]):
-                c = m["lambda_cog"]
+            if jf.rastrear and np.isfinite(m["lambda_centro"]):
+                c = m["lambda_centro"]
                 ultimo[jf.nome] = c
             ref = refs[jf.nome]
             meia = jf.meia_largura_nm
@@ -460,13 +594,21 @@ def analisar_sessao(sessao, janelas: list[JanelaFBG], passo_ref: int = 0, escala
             k = fisica.sensibilidade_pm_por_ue(lam0, p_e) * 1e-3
             lin = dict(passo=kp, rotulo=rot[kp] if kp < len(rot) else str(kp), fbg=jf.nome,
                        n_espectros=int(np.sum(passo_all == kp)), **m,
-                       deslocamento_pm=(m["lambda_cog"] - lam0) * 1e3,
-                       eps_cog_ue=(m["lambda_cog"] - lam0) / k,
+                       deslocamento_pm=(m["lambda_cog"] - cog_ref[jf.nome]) * 1e3,
+                       eps_cog_ue=(m["lambda_cog"] - cog_ref[jf.nome]) / k,
+                       eps_centro_ue=(m["lambda_centro"] - lam0) / k,
+                       salto_subpicos_ue=m["separacao_subpicos_nm"] / k,
                        delta_ajuste_pm=ch["delta_nm"] * 1e3, chirp_pm=ch["chirp_nm"] * 1e3,
                        chirp_pm_sd=ch["chirp_nm_sd"] * 1e3, ajuste_rms=ch["rms"],
                        eps_media_ue=ch["delta_nm"] / k, delta_eps_ue=ch["chirp_nm"] / k,
                        delta_eps_ue_sd=ch["chirp_nm_sd"] / k,
                        gradiente_ue_mm=ch["chirp_nm"] / k / jf.comprimento_mm)
+            if np.isfinite(sig_ref[jf.nome]):
+                gr = ajustar_gauss_ret(wl_m, pw_m, c, meia, sig_ref[jf.nome], escala)
+                ok = m["n_subpicos"] <= 1
+                lin.update(delta_eps_modelo_ue=gr["largura_nm"] / k if ok else float("nan"),
+                           gradiente_modelo_ue_mm=gr["largura_nm"] / k / jf.comprimento_mm if ok else float("nan"),
+                           sigma_ref_pm=sig_ref[jf.nome] * 1e3)
             if com_distribuicao:
                 try:
                     eps, p = distribuicao_deformacao(ref, wl_m, pw_m, c, meia, lam0, escala=escala, p_e=p_e,
@@ -513,7 +655,7 @@ def salvar_tabela_csv(linhas: list[dict], caminho: str, decimal: str = ","):
 
     def fmt(v):
         if isinstance(v, (float, np.floating)):
-            s = "" if not np.isfinite(v) else f"{v:.6g}"
+            s = "" if not np.isfinite(v) else f"{v:.10g}"
             return s.replace(".", decimal)
         return str(v)
 
