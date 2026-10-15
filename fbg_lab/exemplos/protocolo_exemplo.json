@@ -1,0 +1,30 @@
+{
+  "ensaio": "Viga engastada - FBG colada - carregamento em degraus",
+  "observacoes": "Preencha: amostra, adesivo, cura, temperatura ambiente, posicao das FBGs, comprimento das redes.",
+  "fonte": {
+    "tipo": "web",
+    "host": "localhost",
+    "porta": 8002,
+    "canal": 1
+  },
+  "fbgs": [
+    {"nome": "FBG1", "lambda_nominal": 1530.0, "janela_nm": 3.0, "comprimento_mm": 10.0, "apodizacao": "uniforme"},
+    {"nome": "FBG2", "lambda_nominal": 1550.0, "janela_nm": 3.0, "comprimento_mm": 10.0, "apodizacao": "uniforme"},
+    {"nome": "FBG_T", "lambda_nominal": 1570.0, "janela_nm": 3.0, "comprimento_mm": 10.0,
+     "referencia_temperatura": true}
+  ],
+  "referencia": {"rotulo": "0 N (referencia)", "n_espectros": 50},
+  "espectros_por_passo": 30,
+  "intervalo_s": 0.05,
+  "espera_estabilizacao_s": 5,
+  "modo": "manual",
+  "ajuste_tmm": true,
+  "pasta_saida": "ensaios",
+  "passos": [
+    {"rotulo": "5 N", "carga_N": 5},
+    {"rotulo": "10 N", "carga_N": 10},
+    {"rotulo": "15 N", "carga_N": 15},
+    {"rotulo": "20 N", "carga_N": 20},
+    {"rotulo": "descarga 0 N", "carga_N": 0}
+  ]
+}

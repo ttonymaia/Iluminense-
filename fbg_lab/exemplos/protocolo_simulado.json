@@ -1,0 +1,28 @@
+{
+  "ensaio": "Treino com simulador - gradiente de deformacao crescente",
+  "observacoes": "Ensaio sintetico: FBG2 recebe deformacao media crescente e um gradiente linear (chirp); FBG1 so deformacao uniforme; FBG_T fica livre.",
+  "fonte": {"tipo": "sim", "ruido": 0.15, "fwhm_instr_nm": 0.25,
+            "fbgs": [
+              {"lambda0_nm": 1530.0, "comprimento_mm": 10.0, "dn_ac": 3e-5},
+              {"lambda0_nm": 1550.0, "comprimento_mm": 10.0, "dn_ac": 4e-5},
+              {"lambda0_nm": 1570.0, "comprimento_mm": 10.0, "dn_ac": 3e-5}
+            ]},
+  "fbgs": [
+    {"nome": "FBG1", "lambda_nominal": 1530.0, "janela_nm": 3.0, "comprimento_mm": 10.0},
+    {"nome": "FBG2", "lambda_nominal": 1550.0, "janela_nm": 3.0, "comprimento_mm": 10.0},
+    {"nome": "FBG_T", "lambda_nominal": 1570.0, "janela_nm": 3.0, "comprimento_mm": 10.0, "referencia_temperatura": true}
+  ],
+  "referencia": {"rotulo": "0 (ref)", "n_espectros": 20},
+  "espectros_por_passo": 10,
+  "intervalo_s": 0,
+  "espera_estabilizacao_s": 0,
+  "modo": "manual",
+  "pasta_saida": "ensaios",
+  "passos": [
+    {"rotulo": "P1", "simulacao": [{"eps_media_ue": 200}, {"eps_media_ue": 200, "gradiente_ue_mm": 10}, {}]},
+    {"rotulo": "P2", "simulacao": [{"eps_media_ue": 400}, {"eps_media_ue": 400, "gradiente_ue_mm": 25}, {}]},
+    {"rotulo": "P3", "simulacao": [{"eps_media_ue": 600}, {"eps_media_ue": 600, "gradiente_ue_mm": 50}, {}]},
+    {"rotulo": "P4", "simulacao": [{"eps_media_ue": 800}, {"eps_media_ue": 800, "gradiente_ue_mm": 80}, {}]},
+    {"rotulo": "P5", "simulacao": [{"eps_media_ue": 1000}, {"eps_media_ue": 1000, "gradiente_ue_mm": 120}, {}]}
+  ]
+}
