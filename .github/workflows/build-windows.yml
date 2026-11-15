@@ -1,0 +1,60 @@
+name: FBG SpectraLog - executável Windows
+
+on:
+  push:
+    paths:
+      - "FBG_SpectraLog/**"
+      - ".github/workflows/build-windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: FBG_SpectraLog
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pytest
+
+      - name: Testes
+        run: python -m pytest -q -p no:cacheprovider tests
+
+      - name: Gerar executável
+        run: pyinstaller --noconfirm spectralog.spec
+
+      - name: Teste do executável (simulador + gravação sem interface)
+        shell: pwsh
+        run: |
+          $sim = Start-Process -FilePath dist\FBG_SpectraLog\FBG_SpectraLog_console.exe `
+                 -ArgumentList "--simulador","--porta","18002" -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 4
+          $out = "$env:RUNNER_TEMP\ensaios"
+          dist\FBG_SpectraLog\FBG_SpectraLog_console.exe --headless --porta 18002 --taxa 5 `
+              --duracao 12 --nome smoke --pasta $out
+          Stop-Process -Id $sim.Id -Force
+          $csv = Get-ChildItem -Recurse $out -Filter "CH1_potencia.csv"
+          if (-not $csv) { throw "nenhum espectro gravado pelo executável" }
+          $lines = (Get-Content $csv[0].FullName | Measure-Object -Line).Lines
+          Write-Host "linhas gravadas em CH1_potencia.csv: $lines"
+          if ($lines -lt 20) { throw "poucas amostras gravadas ($lines)" }
+
+      - name: Empacotar
+        shell: pwsh
+        run: |
+          Copy-Item README.md dist\FBG_SpectraLog\LEIA-ME.md
+          Compress-Archive -Path dist\FBG_SpectraLog -DestinationPath FBG_SpectraLog_windows.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FBG_SpectraLog_windows
+          path: FBG_SpectraLog/FBG_SpectraLog_windows.zip
+          retention-days: 90
