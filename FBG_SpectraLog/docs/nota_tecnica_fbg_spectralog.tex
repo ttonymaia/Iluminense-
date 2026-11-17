@@ -1,0 +1,417 @@
+% Nota técnica do FBG SpectraLog — compilar com: latexmk -pdf nota_tecnica_fbg_spectralog.tex
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[brazil]{babel}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.misc,backgrounds}
+\usepackage[hidelinks]{hyperref}
+
+\captionsetup{font=small,labelfont=bf,width=0.92\textwidth}
+\renewcommand{\lstlistingname}{Listagem}
+\setlist{nosep,leftmargin=*}
+\setlength{\parskip}{3pt}
+
+\definecolor{ink}{HTML}{0B0B0B}
+\definecolor{ink2}{HTML}{52514E}
+\definecolor{azul}{HTML}{2A78D6}
+\definecolor{laranja}{HTML}{EB6834}
+\definecolor{verde}{HTML}{1BAF7A}
+\definecolor{cinza}{HTML}{E1E0D9}
+\definecolor{fundo}{HTML}{F6F6F4}
+
+\lstset{basicstyle=\ttfamily\small,columns=fullflexible,keepspaces=true,frame=single,
+  framerule=0.3pt,rulecolor=\color{cinza},backgroundcolor=\color{fundo},breaklines=true,
+  xleftmargin=4pt,xrightmargin=4pt,aboveskip=4pt,belowskip=4pt}
+
+\tikzset{
+  bloco/.style={draw=ink2,fill=white,rounded corners=2pt,align=center,inner sep=5pt,
+                font=\small,line width=0.5pt},
+  sub/.style={draw=ink2,fill=fundo,rounded corners=1.5pt,align=center,inner sep=3pt,
+              font=\footnotesize,line width=0.4pt,text width=3.1cm},
+  grupo/.style={draw=ink2,rounded corners=3pt,inner sep=6pt,line width=0.6pt,fill=white},
+  titulo/.style={font=\small\bfseries,anchor=south west,inner sep=2pt},
+  seta/.style={-{Stealth[length=2.4mm]},line width=0.6pt,draw=ink},
+  setaf/.style={-{Stealth[length=2.4mm]},line width=0.6pt,draw=ink2,dashed},
+  rotulo/.style={font=\footnotesize,fill=white,inner sep=1.5pt,align=center},
+  estado/.style={draw=ink2,fill=white,rounded corners=6pt,align=center,inner sep=5pt,
+                 font=\small,line width=0.5pt,text width=3.0cm,minimum height=1.0cm},
+}
+
+\title{\textbf{FBG SpectraLog}\\[2pt]
+\large Aquisição e registro do espectro bruto de interrogadores FBG-scan\\
+em paralelo ao software ILLumiSense}
+\author{Nota técnica do software, versão 1.0.0}
+\date{Novembro de 2026}
+
+\begin{document}
+\maketitle
+
+\section{Problema e solução adotada}
+
+O interrogador FBGS \textbf{FBG-scan 804D} (4~canais, 1510--1590~nm, detecção por CCD) é operado
+exclusivamente pelo software do fabricante, o \textbf{ILLumiSense}, que se comunica com o equipamento
+por USB, faz a detecção dos picos de reflexão e registra em arquivo apenas o comprimento de onda de
+Bragg $\lambda_B$ de cada rede. O espectro refletido completo $P(\lambda)$, necessário para
+caracterizar alargamento, assimetria, divisão de pico e dano em redes uniformes e \emph{chirped}, é
+exibido na tela do ILLumiSense mas não é gravado.
+
+O espectro, porém, existe na memória do ILLumiSense e é exposto por um \emph{web service} embutido
+no próprio programa (seção~\ref{sec:dep}). O \textbf{FBG SpectraLog} é um programa independente que
+roda no mesmo computador, lê esse espectro por HTTP em \texttt{localhost} na frequência desejada e o
+grava em arquivos por ciclos, sem alterar nada no ILLumiSense, que continua operando e registrando
+$\lambda_B$ normalmente (Figura~\ref{fig:cadeia}).
+
+\begin{figure}[htb]
+\centering\noindent
+\resizebox{0.97\textwidth}{!}{%
+\begin{tikzpicture}[node distance=7mm]
+  \node[bloco,text width=2.0cm] (fbg) {Sensores\\FBG};
+  \node[bloco,text width=2.3cm,right=9mm of fbg] (int) {Interrogador\\FBG-scan 804D};
+  % ILLumiSense
+  \node[sub,right=11mm of int,yshift=16mm] (drv) {driver USB + SDK\\(ISMMSDK.dll)};
+  \node[sub,below=2mm of drv] (pk) {detecção de picos\\$\lambda_B$ por canal};
+  \node[sub,below=2mm of pk] (log) {registro de $\lambda_B$\\(arquivos do ILLumiSense)};
+  \node[sub,below=2mm of log,fill=azul!10,draw=azul] (ws) {web service \textbf{ILLWS}\\HTTP, porta 8002};
+  \begin{scope}[on background layer]
+    \node[grupo,fit=(drv)(pk)(log)(ws),inner xsep=8pt] (ill) {};
+  \end{scope}
+  \node[titulo] at (ill.north west) {ILLumiSense.exe};
+  % SpectraLog
+  \node[sub,right=34mm of drv,fill=azul!10,draw=azul] (acq) {aquisição\\agenda $t_k=t_0+k\,\Delta t$};
+  \node[sub,below=2mm of acq] (wr) {gravação em ciclos\\CSV + \texttt{fsync}};
+  \node[sub,below=2mm of wr] (an) {análise e interface\\espectro, cascata, métricas};
+  \node[sub,below=2mm of an] (pg) {proteção de energia\\(Windows não suspende)};
+  \begin{scope}[on background layer]
+    \node[grupo,fit=(acq)(wr)(an)(pg),inner xsep=8pt] (sl) {};
+  \end{scope}
+  \node[titulo] at (sl.north west) {FBG SpectraLog};
+  % disco
+  \node[bloco,text width=2.5cm,right=9mm of sl] (disk) {Disco\\\footnotesize\texttt{ciclo\_0001/}\\\footnotesize\texttt{ciclo\_0002/}\,\dots};
+  % setas
+  \draw[seta] (fbg) -- node[rotulo,above]{fibra} (int);
+  \draw[seta] (int) -- node[rotulo,above]{USB} (ill.west |- int);
+  \coordinate (mid) at ($(ill.east)!0.5!(sl.west)$);
+  \draw[seta] (ill.east |- ws) -- (mid |- ws) |- (sl.west |- acq);
+  \node[rotulo,text width=3.5cm,anchor=south] at ($(mid |- ws)!0.5!(mid |- acq)$)
+    {HTTP GET\\\texttt{/ILLWS/GetSpectrum/}$n$\\\footnotesize(\texttt{localhost}, somente leitura)};
+  \draw[seta] (sl.east |- wr) -- (disk.west |- wr);
+  \node[rotulo,text width=3.8cm,below=2.5mm of ill.south,font=\footnotesize\itshape]
+    {somente rotas de leitura: nenhuma configuração do ILLumiSense é alterada};
+\end{tikzpicture}}
+\caption{Cadeia de dependência. O FBG SpectraLog não acessa o interrogador: ele consome o espectro que o
+ILLumiSense já adquiriu, por meio do \emph{web service} embutido, e o grava em disco.}
+\label{fig:cadeia}
+\end{figure}
+
+\section{Dependência do ILLumiSense}
+\label{sec:dep}
+
+\subsection{O \emph{web service} ILLWS}
+
+O ILLumiSense é um aplicativo LabVIEW que carrega, ao iniciar, o \emph{NI Embedded Web Server}
+configurado pelo arquivo \texttt{niembeddedws.conf} da sua pasta de instalação (\texttt{Listen 8002}
+para HTTP e \texttt{Listen 8003} para HTTPS) e publica o \emph{web service} \texttt{ILLWS}
+(pacote \texttt{ILLWS.lvws}, LabVIEW 21.0.1). Trata-se de uma interface REST: cada rota é um
+\emph{VI} do LabVIEW que responde a um \texttt{GET} com um objeto JSON. Todas as rotas são
+acessíveis sem autenticação, apenas no próprio computador (\texttt{127.0.0.1}).
+
+A Tabela~\ref{tab:rotas} lista as rotas utilizadas pelo FBG SpectraLog. As rotas que alteram o
+estado do equipamento (\texttt{SetScanRate}, \texttt{SetChannelSettings}, \texttt{EnableChannel},
+\texttt{AutoSetChannel}, \texttt{SaveSettings}, \texttt{Reboot}) existem no serviço, mas
+\textbf{não são chamadas} pelo programa.
+
+\begin{table}[htb]
+\centering\small
+\caption{Rotas do \emph{web service} ILLWS usadas pelo FBG SpectraLog (todas \texttt{GET}, resposta JSON).
+Prefixo: \texttt{http://127.0.0.1:8002/ILLWS/}.}
+\label{tab:rotas}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.9cm}>{\raggedright\arraybackslash}p{5.5cm}>{\raggedright\arraybackslash}p{6.0cm}@{}}
+\toprule
+Rota & Campos da resposta & Uso \\
+\midrule
+\texttt{GetHWInformation/} & \texttt{TypeHW}, \texttt{NumberOfChannels}, \texttt{ScanRates[]} & identificação e teste de conexão \\
+\texttt{GetSerialNumber/} \newline \texttt{GetSWVersion/} \newline \texttt{GetFWVersion/} & \texttt{SN} \newline \texttt{SWVersion} \newline \texttt{FWVersion} & metadados do ensaio \\
+\texttt{GetScanRate/} & \texttt{ScanRate} & taxa de varredura do interrogador (Hz) \\
+\texttt{GetActiveChannels/} & \texttt{ActiveChannels[]} & canais ligados no ILLumiSense (lido a cada 5~s) \\
+\texttt{GetChannelSettings/}$n$ & \texttt{SensitivityMode}, \texttt{IntegrationTime}, \texttt{ThresholdLevel} & diagnóstico \\
+\texttt{GetPeaks/}$n$ & \texttt{PeakWavelengths[]}, \texttt{PeakPowers[]} & picos calculados pelo ILLumiSense (gravados em \texttt{picos.csv}) \\
+\texttt{GetSpectrum/}$n$ & \texttt{SpecWav[]}, \texttt{SpecPow[]} & \textbf{espectro bruto}: eixo $\lambda$ (nm) e potência \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{lstlisting}[caption={Resposta típica de \texttt{GetSpectrum/1} (vetores abreviados). \texttt{Error}=0 indica sucesso.},label={lst:json}]
+{"Error":0,
+ "SpecWav":[1510.000000,1510.078201,1510.156403, ... ,1590.000000],
+ "SpecPow":[-62.4137,-61.9880,-62.5512, ... ,-61.7345]}
+\end{lstlisting}
+
+\subsection{Consequências práticas}
+\begin{enumerate}
+\item O ILLumiSense precisa estar \textbf{aberto e conectado ao interrogador} durante todo o ensaio.
+  O FBG SpectraLog detecta o processo \texttt{ILLumiSense.exe}, lê a porta no
+  \texttt{niembeddedws.conf} da pasta dele e conecta-se sozinho; se o ILLumiSense for fechado e
+  reaberto, a conexão é restabelecida automaticamente (seção~\ref{sec:robustez}).
+\item O espectro obtido é o que o ILLumiSense mantém após o seu próprio processamento: o eixo
+  \texttt{SpecWav} já é o eixo de comprimento de onda calibrado pelo instrumento, e
+  \texttt{SpecPow} está na unidade usada pelo ILLumiSense (dBm, detectado automaticamente pelo sinal
+  dos valores). Não se trata das contagens do CCD, acessíveis apenas pela SDK do fabricante.
+\item A leitura é por \emph{polling} HTTP, não por fluxo contínuo. O ILLumiSense atualiza o espectro na
+  sua taxa de varredura $f_s$; o FBG SpectraLog lê a versão corrente nos instantes que agenda
+  (seção~\ref{sec:tempo}).
+\end{enumerate}
+
+\section{Arquitetura do FBG SpectraLog}
+
+O programa é escrito em Python (PySide6/Qt para a interface, pyqtgraph para os gráficos, NumPy/SciPy
+para a análise) e organiza-se em \emph{threads} independentes da interface gráfica
+(Figura~\ref{fig:arq}), de modo que a aquisição e a gravação não dependem da janela estar visível,
+em primeiro plano ou sequer sendo redesenhada. O mesmo núcleo roda sem interface
+(\texttt{--headless}).
+
+\begin{figure}[htb]
+\centering\noindent
+\resizebox{0.97\textwidth}{!}{%
+\begin{tikzpicture}[node distance=9mm and 8mm]
+  \node[bloco,text width=2.4cm,fill=azul!10,draw=azul] (ws) {ILLWS\\\footnotesize(ILLumiSense)};
+  \node[bloco,text width=2.9cm,right=12mm of ws,yshift=13mm] (mon) {\textbf{Monitor}\\\footnotesize detecta processo, conecta, lê canais ativos, reconecta};
+  \node[bloco,text width=2.9cm,below=of mon] (acq) {\textbf{Aquisição}\\\footnotesize agenda absoluta;\\ \texttt{GetSpectrum} e \texttt{GetPeaks} por canal};
+  \node[bloco,text width=2.9cm,below=19mm of acq] (pw) {\textbf{PowerGuard}\\\footnotesize \emph{power request} + EcoQoS desativado};
+  \node[bloco,text width=1.3cm,right=of acq,yshift=10mm,fill=fundo] (q1) {fila};
+  \node[bloco,text width=1.3cm,right=of acq,yshift=-10mm,fill=fundo] (q2) {fila};
+  \node[bloco,text width=3.1cm,right=of q1] (wr) {\textbf{Gravação}\\\footnotesize ciclos, CSV, \texttt{fsync}, compactação};
+  \node[bloco,text width=3.1cm,right=of q2] (an) {\textbf{Análise}\\\footnotesize picos, FWHM, BW$_{-X\,\mathrm{dB}}$, referência};
+  \node[bloco,text width=1.9cm,right=of wr] (disk) {Disco};
+  \node[bloco,text width=1.9cm,right=of an] (gui) {Interface};
+  \node[bloco,text width=2.4cm,right=28mm of pw] (win) {Windows\\\footnotesize gerência de energia};
+  \draw[seta] (ws.east) -- ++(5mm,0) |- (mon.west);
+  \draw[seta] (ws.east) -- ++(5mm,0) |- (acq.west);
+  \draw[seta] (acq.east) -- ++(3mm,0) |- (q1.west);
+  \draw[seta] (acq.east) -- ++(3mm,0) |- (q2.west);
+  \draw[seta] (q1) -- (wr);
+  \draw[seta] (q2) -- (an);
+  \draw[seta] (wr) -- (disk);
+  \draw[seta] (an) -- (gui);
+  \draw[setaf] (mon.south) -- node[rotulo,right]{estado da conexão, canais} (acq.north);
+  \draw[seta] (pw) -- node[rotulo,above]{\texttt{PowerSetRequest}} (win);
+  \draw[setaf] (gui.south) -- ++(0,-10mm) -| node[rotulo,pos=0.3,above]{comandos: iniciar/parar, frequência, canais} ($(acq.south)+(6mm,0)$);
+\end{tikzpicture}}
+\caption{Organização interna. As setas tracejadas são sinais de controle; as cheias, fluxo de dados.
+A interface só consome o que as \emph{threads} produzem: fechá-la ou minimizá-la não interfere na gravação.}
+\label{fig:arq}
+\end{figure}
+
+\paragraph{Monitor.} A cada 2~s verifica se o processo \texttt{ILLumiSense.exe} existe; quando
+desconectado, tenta a conexão com \texttt{GetHWInformation}; conectado, atualiza a lista de canais
+ativos a cada 5~s. Com a opção \emph{seguir os canais ligados no ILLumiSense}, os canais gravados são
+exatamente os ativos no equipamento (até~4); a numeração interna (0--3 ou 1--4) é detectada
+automaticamente.
+
+\paragraph{Aquisição.} Os instantes de leitura são definidos numa agenda absoluta, sem acúmulo de
+deriva. No modo contínuo, com frequência $f$ e período $\Delta t = 1/f$,
+\begin{equation}
+t_k = t_0 + k\,\Delta t,\qquad k = 0,1,2,\dots
+\label{eq:agenda}
+\end{equation}
+No modo intermitente (rajadas de duração $D$ repetidas a cada período $T$),
+\begin{equation}
+t_{j,k} = t_0 + j\,T + k\,\Delta t,\qquad 0 \le k\,\Delta t < D .
+\label{eq:rajada}
+\end{equation}
+Se uma leitura atrasar além de um período, os instantes perdidos são contabilizados e exibidos, e a
+agenda segue do próximo $t_k$ futuro. Em cada instante, para cada canal ativo, o programa chama
+\texttt{GetSpectrum/}$n$ e \texttt{GetPeaks/}$n$, registra o instante da leitura e entrega a
+amostra às filas de gravação e de análise. Um \emph{hash} do vetor \texttt{SpecPow} identifica
+espectros idênticos ao anterior (coluna \texttt{repetido}), o que ocorre quando $f > f_s$.
+
+\paragraph{Gravação.} Uma \emph{thread} própria retira as amostras da fila e escreve os arquivos
+(seção~\ref{sec:dados}); erros de E/S (disco cheio, unidade removida) mantêm a amostra em memória e
+repetem a escrita. A aquisição nunca espera pelo disco.
+
+\section{Robustez para ensaios longos}
+\label{sec:robustez}
+
+\subsection{Energia e tela desligada}
+Desligar a \emph{tela} não interrompe processos no Windows; o que interrompe um ensaio é o sistema
+entrar em suspensão ou hibernação, desligar a porta USB do interrogador ou estrangular processos em
+segundo plano (\emph{EcoQoS}). Enquanto o FBG SpectraLog está aberto, a \emph{thread} PowerGuard:
+\begin{itemize}
+\item registra uma \emph{power request} (\texttt{PowerSetRequest}) dos tipos \texttt{SystemRequired} e
+  \texttt{ExecutionRequired}, reforçada por \texttt{SetThreadExecutionState} com \texttt{ES\_CONTINUOUS},
+  \texttt{ES\_SYSTEM\_REQUIRED} e \texttt{ES\_AWAYMODE\_REQUIRED}, renovada a cada 30~s: o sistema não
+  suspende, mas a tela apaga normalmente; a requisição é visível em \texttt{powercfg /requests};
+\item desativa o \emph{power throttling} (EcoQoS) do próprio processo e do processo do ILLumiSense;
+\item opcionalmente, ajusta o plano de energia via \texttt{powercfg}: suspensão e hibernação
+  ``nunca'', suspensão seletiva de USB desativada, fechar a tampa ``não fazer nada''.
+\end{itemize}
+
+\subsection{Integridade dos dados}
+Os arquivos são abertos em modo \emph{append} e forçados ao disco (\texttt{fsync}) a cada
+$\Delta t_f = 2$~s (configurável); uma queda de energia perde, no máximo, as amostras desse intervalo.
+Cada ciclo (por tempo, por número de espectros ou por rajada) é uma pasta independente, de modo que um
+arquivo corrompido não compromete os demais; uma linha incompleta ao final de um arquivo é descartada
+pelos leitores fornecidos. Ciclos fechados podem ser compactados (\texttt{.csv.gz}); o original só é
+apagado depois de o arquivo compactado ser lido e verificado.
+
+\subsection{Reconexão e retomada}
+A Figura~\ref{fig:estados} resume o comportamento diante de falhas. A perda de conexão com o
+ILLumiSense (fechamento, travamento) gera um evento \texttt{LACUNA} em \texttt{eventos.log}; a
+gravação permanece armada e continua, no mesmo ciclo, assim que a conexão volta. Se o próprio
+FBG SpectraLog for encerrado abruptamente ou o computador reiniciar, a configuração guarda a marca de
+``gravação ativa''; na reabertura, após uma contagem regressiva de 60~s (ou confirmação), o ensaio é
+retomado \textbf{na mesma pasta}, em um novo ciclo, com a numeração de amostras continuada e a lacuna
+registrada. No encerramento de sessão do Windows (\emph{commitDataRequest}) os arquivos são fechados
+com segurança e a marca é mantida para retomada.
+
+\begin{figure}[htb]
+\centering\noindent
+\resizebox{0.97\textwidth}{!}{%
+\begin{tikzpicture}[node distance=15mm and 21mm]
+  \node[estado] (esp) {Aguardando\\ILLumiSense};
+  \node[estado,right=of esp] (con) {Conectado\\\footnotesize (prévia na tela)};
+  \node[estado,right=of con,fill=azul!10,draw=azul] (grav) {\textbf{Gravando}\\\footnotesize ciclo $c$, amostra $i$};
+  \node[estado,below=of grav,fill=laranja!10,draw=laranja] (des) {Desconectado\\\footnotesize gravação armada, evento \texttt{LACUNA}};
+  \node[estado,below=of con,fill=laranja!10,draw=laranja] (int) {Interrompido\\\footnotesize queda de energia, reinício do PC};
+  \node[estado,below=of esp] (ret) {Retomada agendada\\\footnotesize mesma pasta, ciclo $c{+}1$};
+  \draw[seta] (esp) -- node[rotulo,above,text width=2.0cm]{serviço ILLWS responde} (con);
+  \draw[seta] (con) -- node[rotulo,above,text width=2.0cm]{iniciar ensaio ou retomada automática} (grav);
+  \draw[seta] (grav.south east) to[bend left=35] node[rotulo,right]{conexão perdida} (des.north east);
+  \draw[seta] (des.north west) to[bend right=35] node[rotulo,right]{reconectado} (grav.south west);
+  \draw[seta] (grav.south west) to[bend right=10] node[rotulo,sloped,above,pos=0.45]{programa ou PC cai} (int.north east);
+  \draw[seta] (int) -- node[rotulo,above]{reabertura} (ret);
+  \draw[seta] (ret) -- node[rotulo,left]{aguarda conexão} (esp);
+  \draw[seta] (con.south west) to[bend left=12] node[rotulo,sloped,below,pos=0.5]{ILLumiSense fecha} (esp.south east);
+\end{tikzpicture}}
+\caption{Estados do ensaio. Em nenhum caso a gravação é desarmada automaticamente: só o comando
+\emph{Parar ensaio} encerra um ensaio.}
+\label{fig:estados}
+\end{figure}
+
+\section{Dados gravados}
+\label{sec:dados}
+
+\begin{lstlisting}[caption={Estrutura de um ensaio.},label={lst:tree},basicstyle=\ttfamily\footnotesize]
+<pasta>/2026-11-18_080000_retracao_concreto/
+  ensaio_info.json    equipamento (tipo, SN, versoes), configuracao, inicio, fim, status
+  eventos.log         conexoes, LACUNAS, ciclos, avisos (uma linha por evento)
+  resumo_ciclos.csv   ciclo, inicio, fim, numero de amostras
+  referencias/        espectros de referencia capturados (lambda, P)
+  ciclo_0001/
+    amostras.csv      amostra, data_hora, t_unix, t_ensaio_s, rajada, canais_ok, duracao_ms
+    CH1_potencia.csv  amostra, t_unix, t_ensaio_s, rajada, repetido, P0001 ... P1024
+    CH1_lambda.csv    amostra, t_unix, t_ensaio_s, rajada, L0001 ... L1024  (nm)
+    picos.csv         picos do ILLumiSense: amostra, t_unix, t_ensaio_s, canal, fbg, lambda, P
+    metricas.csv      metricas espectrais por pico (secao 6)
+  ciclo_0002/ ...
+\end{lstlisting}
+
+Cada linha de \texttt{CH$n$\_potencia.csv} é um espectro; a linha de mesmo número em
+\texttt{CH$n$\_lambda.csv} é o seu eixo de comprimento de onda. Os arquivos são numéricos (uma linha de
+cabeçalho), legíveis diretamente por \texttt{numpy.loadtxt}, \texttt{pandas.read\_csv} e
+\texttt{readmatrix} (MATLAB). A base de tempo é
+\begin{equation}
+t_{\text{ensaio}} = t_{\text{unix}} - t_0,
+\end{equation}
+com $t_{\text{unix}}$ em segundos desde 1970-01-01 UTC (resolução de 1~ms) e $t_0$ o início do ensaio,
+registrado em \texttt{ensaio\_info.json}. Com a opção \emph{eixo $\lambda$ somente quando mudar}, o
+eixo é regravado apenas quando difere do anterior, e os leitores fornecidos
+(\texttt{spectralog.reader} em Python, \texttt{ler\_ensaio\_fbg.m} em MATLAB) reconstroem a matriz
+completa. Os ensaios também podem ser convertidos para HDF5 ou \texttt{.mat}.
+
+\paragraph{Volume.} Para espectros de $n$ pontos, cada espectro ocupa cerca de $11{,}5$~kB em
+\texttt{CH$n$\_potencia.csv} e $12{,}5$~kB em \texttt{CH$n$\_lambda.csv} ($n = 1024$). A
+Tabela~\ref{tab:volume} estima o volume diário por canal para $f = 0{,}1$~Hz (um espectro a cada 10~s).
+
+\begin{table}[htb]
+\centering\small
+\caption{Volume estimado por canal a $f=0{,}1$~Hz ($8640$ espectros/dia, $n=1024$).}
+\label{tab:volume}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+ & eixo $\lambda$ em todo espectro & eixo $\lambda$ só quando mudar & idem, ciclos compactados \\
+\midrule
+por dia & $\approx 207$~MB & $\approx 99$~MB & $\approx 25$~MB \\
+60 dias & $\approx 12{,}4$~GB & $\approx 6{,}0$~GB & $\approx 1{,}5$~GB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{tcolorbox}[colback=fundo,colframe=ink2,boxrule=0.4pt,arc=2pt,left=4pt,right=4pt,top=3pt,bottom=3pt,
+  title=\small\bfseries Configuração usada no ensaio de retração do concreto,fonttitle=\bfseries]
+\small
+Frequência: 1 espectro a cada 10~s ($0{,}1$~Hz), modo contínuo; canais: os ligados no ILLumiSense;
+ciclo: novo arquivo a cada 24~h; eixo $\lambda$ somente quando mudar; ciclos fechados compactados;
+picos do ILLumiSense e métricas gravados; proteção de energia ativa; retomada automática ativa.
+\end{tcolorbox}
+
+\section{Métricas espectrais calculadas}
+\label{sec:metricas}
+
+Para cada pico detectado (proeminência mínima de 3~dB e separação mínima de $0{,}3$~nm, ajustáveis),
+o programa calcula, com $P$ em dB e $P^{\text{lin}} = 10^{P/10}$:
+\begin{align}
+\lambda_{\max} &: \text{posição do máximo com interpolação parabólica sub-amostral;} \\
+\lambda_c &= \frac{\sum_i \lambda_i\,P^{\text{lin}}_i}{\sum_i P^{\text{lin}}_i}\quad
+  \text{(soma na região acima de $-3$~dB);} \\
+\text{FWHM} &= \lambda_R^{(-3\,\mathrm{dB})} - \lambda_L^{(-3\,\mathrm{dB})},\qquad
+\text{BW}_{-X\,\mathrm{dB}} = \lambda_R^{(-X\,\mathrm{dB})} - \lambda_L^{(-X\,\mathrm{dB})}; \\
+A &= \frac{\lambda_R^{(-3\,\mathrm{dB})} - \lambda_{\max}}{\lambda_{\max} - \lambda_L^{(-3\,\mathrm{dB})}}
+  \quad (A = 1\ \text{simétrico});
+\end{align}
+em que $\lambda_{L,R}^{(-X\,\mathrm{dB})}$ são os cruzamentos (interpolados) do nível $P_{\max} - X$~dB
+à esquerda e à direita do pico. Calcula ainda a assimetria estatística (\emph{skewness}) da
+distribuição $P^{\text{lin}}(\lambda)$ no pico e o \textbf{número de sub-picos}: máximos locais, com
+proeminência $\ge 0{,}5$~dB, dentro da banda $\text{BW}_{-X\,\mathrm{dB}}$ (padrão $X=10$). Mais de um
+sub-pico indica divisão do pico, associada a deformação não uniforme ao longo da rede.
+
+Quando um \textbf{espectro de referência} é capturado (por exemplo, antes do carregamento), o
+deslocamento espectral $\Delta\lambda_{\text{ref}}$ é obtido pelo máximo da correlação cruzada entre
+os espectros atual e de referência (em potência linear, reamostrados numa grade comum, com refinamento
+parabólico), e é reportado também o coeficiente de correlação de Pearson $\rho$ entre eles. Essas
+métricas destinam-se ao acompanhamento em tempo real; para a análise final, recomenda-se recalculá-las
+a partir do espectro bruto gravado, com parâmetros ajustados às redes do ensaio.
+
+\section{Temporização e limitações}
+\label{sec:tempo}
+\begin{itemize}
+\item O instante registrado é o da requisição HTTP, não o da varredura do CCD. O atraso entre a
+  varredura e a leitura é limitado por $1/f_s + t_{\text{HTTP}}$ (dezenas de milissegundos); os canais
+  são lidos em sequência, e cada um recebe o seu próprio $t_{\text{unix}}$. Para ensaios quase-estáticos
+  (retração, fluência, fadiga de baixa frequência) isso é irrelevante; o sistema \textbf{não} substitui
+  uma aquisição sincronizada para fenômenos dinâmicos.
+\item A frequência máxima prática é $f_{\max} \approx 1/(N_{\text{ch}}\,t_{\text{HTTP}})$, exibida no
+  painel do programa a partir do tempo de leitura medido; acima da taxa de varredura $f_s$ os espectros
+  se repetem e são marcados.
+\item O eixo \texttt{SpecWav} é o eixo calibrado pelo ILLumiSense; não há acesso às contagens do CCD.
+\item O programa depende de o ILLumiSense estar aberto e conectado; ele reconecta, mas não reinicia o
+  ILLumiSense. Em um reinício do computador, o ILLumiSense também deve abrir e conectar ao
+  interrogador automaticamente.
+\item A contagem de sub-picos é sensível ao \emph{ripple} de redes \emph{chirped}; deve ser lida como
+  tendência ao longo do ensaio, não como valor absoluto. Em espectros largos com \emph{ripple} acima de
+  3~dB, a largura a $-10$~dB é a medida estável.
+\end{itemize}
+
+\section{Verificação}
+O núcleo foi verificado com um simulador que reproduz a API do ILLWS (rotas, JSON, numeração de
+canais) e com 19 testes automatizados: reconexão e retomada da gravação durante quedas do serviço,
+rotação de ciclos por tempo, número de espectros e rajada, leitura de volta exata dos dados gravados
+(inclusive no formato de separador brasileiro e com linha final truncada), precisão da FWHM
+(erro $<2\%$) e da estimativa de deslocamento por correlação ($<3$~pm). O executável para Windows é
+gerado e testado em integração contínua. No primeiro contato com o equipamento real, o programa
+detectou o ILLumiSense, conectou-se ao \emph{web service} e reconheceu o canal ligado. Recomenda-se, antes
+de um ensaio longo, um ensaio piloto de 24--48~h com a tela desligada, conferindo
+\texttt{eventos.log}, o consumo de memória do processo e o número de amostras por ciclo.
+
+\end{document}
