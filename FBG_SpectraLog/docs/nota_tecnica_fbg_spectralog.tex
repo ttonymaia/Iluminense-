@@ -248,8 +248,8 @@ Desligar a \emph{tela} não interrompe processos no Windows; o que interrompe um
 entrar em suspensão ou hibernação, desligar a porta USB do interrogador ou estrangular processos em
 segundo plano (\emph{EcoQoS}). Enquanto o FBG SpectraLog está aberto, a \emph{thread} PowerGuard:
 \begin{itemize}
-\item registra uma \emph{power request} (\texttt{PowerSetRequest}) dos tipos \texttt{SystemRequired} e
-  \texttt{ExecutionRequired}, reforçada por \texttt{SetThreadExecutionState} com os sinalizadores\\
+\item registra uma \emph{power request} dos tipos \texttt{SystemRequired} e \texttt{ExecutionRequired}
+  (API \texttt{PowerSetRequest}), reforçada por \texttt{SetThreadExecutionState} com os sinalizadores\\
   \texttt{ES\_CONTINUOUS}, \texttt{ES\_SYSTEM\_REQUIRED} e \texttt{ES\_AWAYMODE\_REQUIRED}, renovada a cada
   30~s: o sistema não suspende, mas a tela apaga normalmente; a requisição é visível em
   \texttt{powercfg /requests};
