@@ -249,9 +249,10 @@ entrar em suspensão ou hibernação, desligar a porta USB do interrogador ou es
 segundo plano (\emph{EcoQoS}). Enquanto o FBG SpectraLog está aberto, a \emph{thread} PowerGuard:
 \begin{itemize}
 \item registra uma \emph{power request} (\texttt{PowerSetRequest}) dos tipos \texttt{SystemRequired} e
-  \texttt{ExecutionRequired}, reforçada por \texttt{SetThreadExecutionState} com \texttt{ES\_CONTINUOUS},
-  \texttt{ES\_SYSTEM\_REQUIRED} e \texttt{ES\_AWAYMODE\_REQUIRED}, renovada a cada 30~s: o sistema não
-  suspende, mas a tela apaga normalmente; a requisição é visível em \texttt{powercfg /requests};
+  \texttt{ExecutionRequired}, reforçada por \texttt{SetThreadExecutionState} com os sinalizadores\\
+  \texttt{ES\_CONTINUOUS}, \texttt{ES\_SYSTEM\_REQUIRED} e \texttt{ES\_AWAYMODE\_REQUIRED}, renovada a cada
+  30~s: o sistema não suspende, mas a tela apaga normalmente; a requisição é visível em
+  \texttt{powercfg /requests};
 \item desativa o \emph{power throttling} (EcoQoS) do próprio processo e do processo do ILLumiSense;
 \item opcionalmente, ajusta o plano de energia via \texttt{powercfg}: suspensão e hibernação
   ``nunca'', suspensão seletiva de USB desativada, fechar a tampa ``não fazer nada''.
